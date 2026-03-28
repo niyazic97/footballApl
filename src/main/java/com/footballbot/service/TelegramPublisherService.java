@@ -17,18 +17,21 @@ public class TelegramPublisherService extends TelegramLongPollingBot {
 
     private final FormatterService formatterService;
     private final ImageFinderService imageFinderService;
+    private final BotCommandService botCommandService;
     private final String channelId;
     private final String botUsername;
 
     public TelegramPublisherService(
             FormatterService formatterService,
             ImageFinderService imageFinderService,
+            @org.springframework.context.annotation.Lazy BotCommandService botCommandService,
             @Value("${telegram.bot.token}") String botToken,
             @Value("${telegram.channel.id}") String channelId,
             @Value("${telegram.bot.username}") String botUsername) {
         super(botToken);
         this.formatterService = formatterService;
         this.imageFinderService = imageFinderService;
+        this.botCommandService = botCommandService;
         this.channelId = channelId;
         this.botUsername = botUsername;
     }
@@ -87,7 +90,20 @@ public class TelegramPublisherService extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
-        // Channel bot — no incoming messages to handle
+        if (!update.hasMessage() || !update.getMessage().hasText()) return;
+
+        var msg = update.getMessage();
+        String text = msg.getText().split("@")[0]; // strip @botname suffix
+        String userId = msg.getFrom().getId().toString();
+
+        if (!text.startsWith("/")) return;
+        if (!botCommandService.isAdmin(userId)) {
+            log.warn("Unauthorized command from user {}", userId);
+            return;
+        }
+
+        String response = botCommandService.handleCommand(text);
+        sendTextMessageToUser(userId, response);
     }
 
     @Override

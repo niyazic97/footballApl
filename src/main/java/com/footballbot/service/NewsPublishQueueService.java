@@ -26,6 +26,11 @@ public class NewsPublishQueueService {
     private int delayBetweenPostsSeconds;
 
     private final LinkedBlockingQueue<NewsItem> queue = new LinkedBlockingQueue<>();
+    private volatile boolean paused = false;
+
+    public void pause() { paused = true; log.info("Publishing paused"); }
+    public void resume() { paused = false; log.info("Publishing resumed"); }
+    public boolean isPaused() { return paused; }
 
     @PostConstruct
     public void startPublisherThread() {
@@ -47,7 +52,15 @@ public class NewsPublishQueueService {
     private void publishLoop() {
         while (true) {
             try {
+                if (paused) {
+                    TimeUnit.SECONDS.sleep(10);
+                    continue;
+                }
                 NewsItem item = queue.take(); // blocks until item available
+                if (paused) {
+                    queue.offer(item); // put back if paused after take
+                    continue;
+                }
                 publish(item);
                 if (!queue.isEmpty()) {
                     TimeUnit.SECONDS.sleep(delayBetweenPostsSeconds);

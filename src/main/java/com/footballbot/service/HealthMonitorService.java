@@ -26,6 +26,8 @@ public class HealthMonitorService {
     private final AtomicInteger errorsLastHour = new AtomicInteger(0);
     private final LocalDateTime botStartTime = LocalDateTime.now();
 
+    public LocalDateTime getBotStartTime() { return botStartTime; }
+
     public void incrementPostCount() {
         postsPublishedSinceLastCheck.incrementAndGet();
     }
