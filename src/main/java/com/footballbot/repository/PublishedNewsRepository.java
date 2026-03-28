@@ -10,4 +10,6 @@ import java.util.List;
 @Repository
 public interface PublishedNewsRepository extends JpaRepository<PublishedNews, String> {
     List<PublishedNews> findByPostedAtAfter(LocalDateTime time);
+
+    boolean existsByPostedAtAfter(LocalDateTime time);
 }

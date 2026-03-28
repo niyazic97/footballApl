@@ -22,8 +22,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.footballbot.model.NewsItem;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.List;
 
 @Component
 @Slf4j
@@ -57,9 +60,21 @@ public class NewsScheduler {
         log.info("Starting news job...");
 
         // Step 1: fetch all news
-        var allNews = rssParserService.fetchAllNews();
+        List<NewsItem> allNews = new ArrayList<>(rssParserService.fetchAllNews());
         log.info("Total fetched: {}", allNews.size());
         allNews.forEach(item -> log.info("  [score={}] {}", ScorerUtil.score(item), item.getTitleEn()));
+
+        // Step 1.5: if bot was down for 8+ hours, skip news older than 1 hour
+        boolean longDowntime = !publishedNewsRepository.existsByPostedAtAfter(
+                LocalDateTime.now(ZoneId.of("Europe/Moscow")).minusHours(8));
+        if (longDowntime) {
+            var cutoff = LocalDateTime.now(ZoneId.of("Europe/Moscow")).minusHours(1);
+            int before = allNews.size();
+            allNews = allNews.stream()
+                    .filter(item -> item.getPublishedAt() != null && item.getPublishedAt().isAfter(cutoff))
+                    .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+            log.info("Long downtime detected — skipped {} stale items (older than 1h)", before - allNews.size());
+        }
 
         // Step 2: filter already published
         var notPublished = allNews.stream()
