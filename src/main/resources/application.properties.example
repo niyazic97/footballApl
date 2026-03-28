@@ -1,0 +1,45 @@
+# Telegram
+telegram.bot.token=${TELEGRAM_BOT_TOKEN}
+telegram.bot.username=${TELEGRAM_BOT_USERNAME}
+telegram.channel.id=${TELEGRAM_CHANNEL_ID}
+
+# Groq
+groq.api.key=${GROQ_API_KEY}
+groq.api.url=https://api.groq.com/openai/v1/chat/completions
+groq.model=llama-3.3-70b-versatile
+
+# Unsplash
+unsplash.access.key=${UNSPLASH_ACCESS_KEY}
+unsplash.api.url=https://api.unsplash.com/search/photos
+
+# Database
+spring.datasource.url=jdbc:sqlite:football_bot.db
+spring.datasource.driver-class-name=org.sqlite.JDBC
+spring.jpa.database-platform=org.hibernate.community.dialect.SQLiteDialect
+spring.jpa.hibernate.ddl-auto=update
+
+# Scheduler
+scheduler.interval.minutes=10
+scheduler.max.posts.per.run=3
+publish.delay.seconds=180
+news.max.age.hours=3
+news.min.score=5
+
+# Logging
+logging.level.com.footballbot=INFO
+logging.file.name=bot.log
+
+# Football Data API
+football.api.key=${FOOTBALL_API_KEY}
+football.api.url=https://api.football-data.org/v4
+football.league.ids=2021,2001
+
+# Deduplication
+dedup.similarity.threshold=0.75
+
+# Health Monitor
+admin.telegram.user.id=${ADMIN_TELEGRAM_USER_ID:}
+health.check.enabled=false
+
+# Spring
+spring.main.allow-bean-definition-overriding=true
