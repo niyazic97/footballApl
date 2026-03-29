@@ -39,14 +39,14 @@ public class DeduplicationService {
                 .findByPostedAtAfter(LocalDateTime.now().minusHours(6))
                 .stream()
                 .map(p -> normalize(p.getTitle()))
-                .collect(Collectors.toList());
+                .toList();
 
         // For entity-based deduplication use a shorter window (2h) to avoid over-blocking
         var entityWindowTitles = publishedNewsRepository
                 .findByPostedAtAfter(LocalDateTime.now().minusHours(2))
                 .stream()
                 .map(p -> normalize(p.getTitle()))
-                .collect(Collectors.toList());
+                .toList();
 
         var result = new ArrayList<NewsItem>();
         var batchTitles = new ArrayList<String>();
@@ -108,6 +108,18 @@ public class DeduplicationService {
             }
         }
 
+        // Step 4: shared content words anchored to an EPL entity — catches same-event articles
+        // worded differently (e.g. "Tudor leaves Tottenham" vs "Tottenham release statement on Tudor")
+        var contentCandidate = getContentWords(normCandidate);
+        for (var recentTitle : entityTitles) {
+            var contentRecent = getContentWords(recentTitle);
+            var shared = new HashSet<>(contentCandidate);
+            shared.retainAll(contentRecent);
+            if (shared.size() >= 2 && shared.stream().anyMatch(ENTITIES::contains)) {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -119,6 +131,13 @@ public class DeduplicationService {
     private Set<String> getWords(String normalized) {
         return Arrays.stream(normalized.split("\\s+"))
                 .filter(w -> !w.isEmpty() && !STOPWORDS.contains(w))
+                .collect(Collectors.toSet());
+    }
+
+    // Words with 5+ chars that carry meaning — used to detect same-event articles
+    private Set<String> getContentWords(String normalized) {
+        return Arrays.stream(normalized.split("\\s+"))
+                .filter(w -> w.length() >= 5 && !STOPWORDS.contains(w))
                 .collect(Collectors.toSet());
     }
 

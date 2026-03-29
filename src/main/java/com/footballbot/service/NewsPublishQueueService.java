@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -21,14 +22,16 @@ import java.util.concurrent.TimeUnit;
 public class NewsPublishQueueService {
 
     private final TelegramPublisherService telegramPublisherService;
+    private final VkPublisherService vkPublisherService;
     private final PublishedNewsRepository publishedNewsRepository;
     private final HealthMonitorService healthMonitorService;
 
     @Value("${publish.delay.seconds:180}")
-    private int delayBetweenPostsSeconds;
+    private int delayBetweenPostsSeconds = 180;
 
     private final LinkedBlockingQueue<NewsItem> queue = new LinkedBlockingQueue<>();
     private volatile boolean paused = false;
+    private volatile long lastPublishedAt = 0;
 
     public void pause() { paused = true; log.info("Publishing paused"); }
     public void resume() { paused = false; log.info("Publishing resumed"); }
@@ -36,6 +39,12 @@ public class NewsPublishQueueService {
 
     @PostConstruct
     public void startPublisherThread() {
+        // Restore last publish time from DB so restarts don't break the delay
+        publishedNewsRepository.findTopByOrderByPostedAtDesc().ifPresent(last -> {
+            lastPublishedAt = last.getPostedAt().toInstant(ZoneOffset.UTC).toEpochMilli();
+            log.info("Restored lastPublishedAt from DB: {}", last.getPostedAt());
+        });
+
         Thread publisher = new Thread(this::publishLoop, "news-publisher");
         publisher.setDaemon(true);
         publisher.start();
@@ -69,10 +78,17 @@ public class NewsPublishQueueService {
                     queue.offer(item); // put back
                     continue;
                 }
-                publish(item);
-                if (!queue.isEmpty()) {
-                    TimeUnit.SECONDS.sleep(delayBetweenPostsSeconds);
+
+                // Enforce minimum gap between posts
+                long secondsSinceLast = (System.currentTimeMillis() - lastPublishedAt) / 1000;
+                if (lastPublishedAt > 0 && secondsSinceLast < delayBetweenPostsSeconds) {
+                    long waitSeconds = delayBetweenPostsSeconds - secondsSinceLast;
+                    log.info("Waiting {}s before next publish (rate limit)", waitSeconds);
+                    TimeUnit.SECONDS.sleep(waitSeconds);
                 }
+
+                publish(item);
+                lastPublishedAt = System.currentTimeMillis();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -90,6 +106,7 @@ public class NewsPublishQueueService {
                     .postedAt(LocalDateTime.now())
                     .build());
             healthMonitorService.incrementPostCount();
+            vkPublisherService.publishNews(item);
         } else {
             healthMonitorService.incrementErrorCount();
             log.warn("Failed to publish: {}", item.getTitleRu());

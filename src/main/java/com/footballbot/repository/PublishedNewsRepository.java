@@ -12,4 +12,6 @@ public interface PublishedNewsRepository extends JpaRepository<PublishedNews, St
     List<PublishedNews> findByPostedAtAfter(LocalDateTime time);
 
     boolean existsByPostedAtAfter(LocalDateTime time);
+
+    java.util.Optional<PublishedNews> findTopByOrderByPostedAtDesc();
 }
