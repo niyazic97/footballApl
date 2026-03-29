@@ -14,7 +14,12 @@ public class RelevanceFilterUtil {
             "women", "woman", "wsl", "women's super league", "women's champions league",
             "uwcl", "women's world cup", "women's euro", "lionesses",
             "female", "girls", "ladies", "fawsl", "barclays wsl",
-            "женской", "женская", "женщины", "женский"
+            "женской", "женская", "женщины", "женский",
+            // Women's-only venues
+            "kingsmeadow", "meadow park",
+            // WSL-exclusive player surnames (no EPL men players with these names)
+            "russo", "harder", "reiten", "stanway", "nusken", "kerr", "hemp",
+            "miedema", "mead", "zelem", "greenwood", "toone", "hanson"
     );
 
     // Women's football URL path segments — block even if title looks neutral
@@ -101,6 +106,7 @@ public class RelevanceFilterUtil {
             return false;
         }
 
+        log.info("PASSED filter: [{}] {}", item.getUrl(), item.getTitleEn());
         return true;
     }
 }
