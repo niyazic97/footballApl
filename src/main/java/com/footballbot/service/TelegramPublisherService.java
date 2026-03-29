@@ -82,6 +82,7 @@ public class TelegramPublisherService extends TelegramLongPollingBot {
             var message = new SendMessage();
             message.setChatId(userId);
             message.setText(text);
+            message.setParseMode("HTML");
             execute(message);
         } catch (TelegramApiException e) {
             log.warn("Failed to send message to user {}: {}", userId, e.getMessage());

@@ -8,10 +8,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 @Service
 @Slf4j
@@ -60,7 +64,8 @@ public class BotCommandService {
                 scorerUtil.refreshCache();
                 yield "✅ Ростеры обновлены: " + scorerUtil.getCacheSize() + " игроков загружено";
             }
-            default -> "❓ Неизвестная команда. Доступные: /status, /pause, /resume, /queue, /refreshrosters";
+            case "/logs" -> buildLogsMessage();
+            default -> "❓ Неизвестная команда. Доступные: /status, /pause, /resume, /queue, /refreshrosters, /logs";
         };
     }
 
@@ -100,5 +105,28 @@ public class BotCommandService {
         int size = newsPublishQueueService.queueSize();
         if (size == 0) return "📋 Очередь пуста";
         return "📋 В очереди: " + size + " новост" + (size == 1 ? "ь" : size < 5 ? "и" : "ей");
+    }
+
+    private String buildLogsMessage() {
+        try {
+            var logFile = Path.of("bot.log");
+            if (!Files.exists(logFile)) return "📄 Файл логов не найден";
+
+            List<String> lines = Files.readAllLines(logFile);
+            int total = lines.size();
+            // Take last 20 lines
+            var tail = lines.subList(Math.max(0, total - 20), total);
+            String content = String.join("\n", tail)
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;");
+            // Telegram message limit ~4096 chars; reserve space for header and <pre> tags
+            if (content.length() > 3800) {
+                content = "..." + content.substring(content.length() - 3800);
+            }
+            return "📄 Последние логи (" + total + " строк):\n<pre>" + content + "</pre>";
+        } catch (IOException e) {
+            return "❌ Не удалось прочитать логи: " + e.getMessage();
+        }
     }
 }
