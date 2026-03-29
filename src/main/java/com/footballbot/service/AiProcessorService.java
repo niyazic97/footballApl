@@ -12,9 +12,11 @@ import okhttp3.RequestBody;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @Slf4j
@@ -28,11 +30,40 @@ public class AiProcessorService {
     @Value("${groq.api.key}")
     private String apiKey;
 
+    @Value("${groq.api.key2:}")
+    private String apiKey2;
+
     @Value("${groq.api.url}")
     private String apiUrl;
 
     @Value("${groq.model}")
     private String model;
+
+    private List<String> apiKeys;
+    private final AtomicInteger keyIndex = new AtomicInteger(0);
+
+    @jakarta.annotation.PostConstruct
+    public void initKeys() {
+        apiKeys = new ArrayList<>();
+        apiKeys.add(apiKey);
+        if (apiKey2 != null && !apiKey2.isBlank()) {
+            apiKeys.add(apiKey2);
+            log.info("Groq: using {} API keys (round-robin on 429)", apiKeys.size());
+        } else {
+            log.info("Groq: using 1 API key");
+        }
+    }
+
+    private String currentKey() {
+        return apiKeys.get(keyIndex.get() % apiKeys.size());
+    }
+
+    private String rotateKey() {
+        int next = keyIndex.incrementAndGet();
+        String key = apiKeys.get(next % apiKeys.size());
+        log.warn("Groq 429 — rotated to key #{}", (next % apiKeys.size()) + 1);
+        return key;
+    }
 
     private static final int MAX_INPUT_CHARS = 3000;
 
@@ -70,27 +101,32 @@ public class AiProcessorService {
     private NewsItem callGroq(NewsItem item, String textForAi, boolean usingFullText) throws Exception {
         var requestBody = buildRequestBody(item, textForAi, usingFullText);
 
-        var request = new Request.Builder()
-                .url(apiUrl)
-                .header("Authorization", "Bearer " + apiKey)
-                .post(RequestBody.create(requestBody, MediaType.get("application/json")))
-                .build();
+        // Try all keys before giving up
+        for (int attempt = 0; attempt < apiKeys.size(); attempt++) {
+            String key = attempt == 0 ? currentKey() : rotateKey();
 
-        try (var response = httpClient.newCall(request).execute()) {
-            if (response.code() == 429) {
-                log.warn("Groq rate limit hit for '{}' — retrying in 10s", item.getTitleEn());
-                Thread.sleep(10000);
-                try (var retry = httpClient.newCall(request).execute()) {
-                    if (retry.code() == 429) {
-                        log.warn("Groq still rate limited for '{}' — will retry next run", item.getTitleEn());
-                        item.setTitleRu(null);
-                        return item;
+            var request = new Request.Builder()
+                    .url(apiUrl)
+                    .header("Authorization", "Bearer " + key)
+                    .post(RequestBody.create(requestBody, MediaType.get("application/json")))
+                    .build();
+
+            try (var response = httpClient.newCall(request).execute()) {
+                if (response.code() == 429) {
+                    if (attempt < apiKeys.size() - 1) {
+                        log.warn("Groq key #{} rate limited for '{}' — trying next key", attempt + 1, item.getTitleEn());
+                        continue;
                     }
-                    return parseGroqResponse(item, retry.body().string());
+                    log.warn("All Groq keys rate limited for '{}' — will retry via queue", item.getTitleEn());
+                    item.setTitleRu(null);
+                    return item;
                 }
+                return parseGroqResponse(item, response.body().string());
             }
-            return parseGroqResponse(item, response.body().string());
         }
+
+        item.setTitleRu(null);
+        return item;
     }
 
     private static final String SYSTEM_PROMPT = """

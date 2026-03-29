@@ -49,7 +49,10 @@ public class RelevanceFilterUtil {
 
     private static final List<String> NON_FOOTBALL_TERMS = List.of(
             "american football", "nfl", "nba", "rugby", "cricket",
-            "tennis", "golf", "tsc", "sneaky fc"
+            "tennis", "golf", "tsc", "sneaky fc",
+            // Quizzes and trivia
+            "can you name", "name every", "name all", "how many can you", "quiz",
+            "test yourself", "trivia", "wordle", "flashscore quiz"
     );
 
     private static final List<String> FOOTBALL_SIGNALS = List.of(

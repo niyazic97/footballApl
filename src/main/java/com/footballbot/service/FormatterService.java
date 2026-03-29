@@ -68,6 +68,9 @@ public class FormatterService {
             case "www.fourfourtwo.com" -> "FourFourTwo";
             case "www.independent.co.uk" -> "The Independent";
             case "www.mirror.co.uk" -> "Mirror";
+            case "www.manchestereveningnews.co.uk" -> "Manchester Evening News";
+            case "www.liverpoolecho.co.uk" -> "Liverpool Echo";
+            case "www.birminghammail.co.uk" -> "Birmingham Mail";
             default -> "Источник";
         };
     }

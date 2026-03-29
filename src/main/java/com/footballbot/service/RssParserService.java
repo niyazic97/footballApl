@@ -66,7 +66,7 @@ public class RssParserService {
             }
             var input = new SyndFeedInput();
             SyndFeed feed = input.build(new XmlReader(new ByteArrayInputStream(body)));
-            var cutoff = LocalDateTime.now().minusHours(maxAgeHours);
+            var cutoff = LocalDateTime.now(ZoneId.of("Europe/Moscow")).minusHours(maxAgeHours);
             var league = detectLeague(feedUrl);
             var source = extractDomain(feedUrl);
 

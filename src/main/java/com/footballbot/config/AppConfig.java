@@ -31,7 +31,13 @@ public class AppConfig {
             // The Independent
             "https://www.independent.co.uk/sport/football/rss",
             // Mirror Football
-            "https://www.mirror.co.uk/sport/football/rss.xml"
+            "https://www.mirror.co.uk/sport/football/rss.xml",
+            // Manchester Evening News (active, EPL-focused)
+            "https://www.manchestereveningnews.co.uk/sport/football/rss.xml",
+            // Liverpool Echo (Liverpool + Everton focused)
+            "https://www.liverpoolecho.co.uk/sport/football/rss.xml",
+            // Birmingham Mail (Aston Villa + Birmingham focused)
+            "https://www.birminghammail.co.uk/sport/football/rss.xml"
     );
 
     @Bean

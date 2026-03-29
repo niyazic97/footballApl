@@ -1,6 +1,7 @@
 package com.footballbot.scheduler;
 
 import com.footballbot.repository.PublishedNewsRepository;
+import com.footballbot.service.AiProcessingQueueService;
 import com.footballbot.service.AiProcessorService;
 import com.footballbot.service.AiRankingService;
 import com.footballbot.service.DeduplicationService;
@@ -27,9 +28,7 @@ import com.footballbot.model.NewsItem;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 @Component
 @Slf4j
@@ -38,6 +37,7 @@ public class NewsScheduler {
 
     private final RssParserService rssParserService;
     private final AiProcessorService aiProcessorService;
+    private final AiProcessingQueueService aiProcessingQueueService;
     private final TelegramPublisherService telegramPublisherService;
     private final PublishedNewsRepository publishedNewsRepository;
     private final DeduplicationService deduplicationService;
@@ -59,40 +59,10 @@ public class NewsScheduler {
     @Value("${news.min.score}")
     private int minScore;
 
-    // Items that failed AI processing: id -> {item, attemptCount}
-    private final Map<String, NewsItem> aiRetryItems = new LinkedHashMap<>();
-    private final Map<String, Integer> aiRetryAttempts = new LinkedHashMap<>();
-    private static final int MAX_AI_RETRIES = 2;
-
-    // JOB 1 — News publishing every 5 minutes
-    @Scheduled(fixedDelayString = "PT5M", initialDelay = 5000)
+    // JOB 1 — News collecting every 10 minutes
+    @Scheduled(fixedDelayString = "PT10M", initialDelay = 5000)
     public void runNewsJob() {
         log.info("Starting news job...");
-
-        // Step 0: retry AI processing for previously failed items
-        if (!aiRetryItems.isEmpty()) {
-            log.info("Retrying AI processing for {} items from previous run", aiRetryItems.size());
-            var retryIds = new ArrayList<>(aiRetryItems.keySet());
-            for (String id : retryIds) {
-                var item = aiRetryItems.get(id);
-                int attempts = aiRetryAttempts.get(id);
-                aiProcessorService.process(item);
-                if (item.getTitleRu() != null && !item.getTitleRu().isBlank()) {
-                    item.setFinalScore(aiRankingService.getFinalScore(item));
-                    newsPublishQueueService.enqueue(item);
-                    log.info("Retry succeeded for '{}', enqueued", item.getTitleEn());
-                    aiRetryItems.remove(id);
-                    aiRetryAttempts.remove(id);
-                } else if (attempts >= MAX_AI_RETRIES) {
-                    log.warn("Dropping '{}' after {} failed AI attempts", item.getTitleEn(), attempts);
-                    aiRetryItems.remove(id);
-                    aiRetryAttempts.remove(id);
-                } else {
-                    aiRetryAttempts.put(id, attempts + 1);
-                    log.warn("Retry {} failed for '{}', will try again next run", attempts + 1, item.getTitleEn());
-                }
-            }
-        }
 
         // Step 1: fetch all news
         List<NewsItem> allNews = new ArrayList<>(rssParserService.fetchAllNews());
@@ -139,38 +109,11 @@ public class NewsScheduler {
 
         log.info("After all filters: {} items remaining from {} fetched", candidates.size(), allNews.size());
 
-        // Step 6: AI processing + final score (2s pause between calls to avoid rate limit)
-        for (int i = 0; i < candidates.size(); i++) {
-            var item = candidates.get(i);
-            if (i > 0) {
-                try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
-            }
-            aiProcessorService.process(item);
-            item.setFinalScore(aiRankingService.getFinalScore(item));
-        }
-
-        // Filter out items where AI processing failed — add to retry queue
-        candidates.removeIf(item -> {
-            if (item.getTitleRu() == null || item.getTitleRu().isBlank()) {
-                if (!aiRetryItems.containsKey(item.getId())) {
-                    aiRetryItems.put(item.getId(), item);
-                    aiRetryAttempts.put(item.getId(), 1);
-                    log.warn("AI failed for '{}' — added to retry queue (attempt 1/{})", item.getTitleEn(), MAX_AI_RETRIES);
-                }
-                return true;
-            }
-            return false;
-        });
-
-        // Step 7: sort by finalScore DESC, take top maxPostsPerRun
-        var top = candidates.stream()
-                .sorted((a, b) -> Integer.compare(b.getFinalScore(), a.getFinalScore()))
-                .limit(maxPostsPerRun)
-                .toList();
-
-        // Step 8: enqueue for publishing (actual publish happens in NewsPublishQueueService)
-        top.forEach(newsPublishQueueService::enqueue);
-        log.info("Enqueued {} items for publishing (queue size: {})", top.size(), newsPublishQueueService.queueSize());
+        // Step 6: sort by L1 score and add to AI processing queue
+        // AI processing happens in a separate thread respecting Groq rate limits
+        candidates.sort((a, b) -> Integer.compare(b.getImportanceScore(), a.getImportanceScore()));
+        candidates.forEach(aiProcessingQueueService::enqueue);
+        log.info("Added {} candidates to AI queue (AI queue size: {})", candidates.size(), aiProcessingQueueService.queueSize());
     }
 
     // JOB 2 — Daily match cache refresh at 08:50 MSK (before schedule post)
