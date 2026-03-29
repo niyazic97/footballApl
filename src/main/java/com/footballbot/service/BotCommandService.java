@@ -114,8 +114,8 @@ public class BotCommandService {
 
             List<String> lines = Files.readAllLines(logFile);
             int total = lines.size();
-            // Take last 20 lines
-            var tail = lines.subList(Math.max(0, total - 20), total);
+            // Take last 5 lines
+            var tail = lines.subList(Math.max(0, total - 5), total);
             String content = String.join("\n", tail)
                     .replace("&", "&amp;")
                     .replace("<", "&lt;")
