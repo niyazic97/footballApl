@@ -78,9 +78,16 @@ public class AiProcessorService {
 
         try (var response = httpClient.newCall(request).execute()) {
             if (response.code() == 429) {
-                log.warn("Groq rate limit hit for '{}' — will retry next run", item.getTitleEn());
-                item.setTitleRu(null);
-                return item;
+                log.warn("Groq rate limit hit for '{}' — retrying in 10s", item.getTitleEn());
+                Thread.sleep(10000);
+                try (var retry = httpClient.newCall(request).execute()) {
+                    if (retry.code() == 429) {
+                        log.warn("Groq still rate limited for '{}' — will retry next run", item.getTitleEn());
+                        item.setTitleRu(null);
+                        return item;
+                    }
+                    return parseGroqResponse(item, retry.body().string());
+                }
             }
             return parseGroqResponse(item, response.body().string());
         }

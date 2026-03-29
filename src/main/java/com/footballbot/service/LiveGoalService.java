@@ -183,6 +183,7 @@ public class LiveGoalService {
             var g = goals.get(0);
             String emoji = g.isOwnGoal() ? "🤦" : g.isPenalty() ? "🎯" : "⚽";
             sb.append("⚽ ГОЛ! ").append(g.getHomeTeam()).append("\n\n");
+            sb.append(scoreToEmoji(g.getHomeScore())).append(" — ").append(scoreToEmoji(g.getAwayScore())).append("\n");
             sb.append("🏴󠁧󠁢󠁥󠁮󠁧󠁿 ").append(g.getHomeTeam()).append(" ")
                     .append(g.getHomeScore()).append(":").append(g.getAwayScore())
                     .append(" ").append(g.getAwayTeam()).append("\n\n");
@@ -195,6 +196,7 @@ public class LiveGoalService {
             sb.append("⚽ Голы последних минут\n\n");
             for (var g : goals) {
                 String emoji = g.isOwnGoal() ? "🤦" : g.isPenalty() ? "🎯" : "🏴󠁧󠁢󠁥󠁮󠁧󠁿";
+                sb.append(scoreToEmoji(g.getHomeScore())).append(" — ").append(scoreToEmoji(g.getAwayScore())).append("\n");
                 sb.append(emoji).append(" ")
                         .append(g.getHomeTeam()).append(" ")
                         .append(g.getHomeScore()).append(":").append(g.getAwayScore())
@@ -219,5 +221,21 @@ public class LiveGoalService {
 
         sb.append("#апл");
         return sb.toString();
+    }
+
+    private String scoreToEmoji(int n) {
+        return switch (n) {
+            case 0 -> "0️⃣";
+            case 1 -> "1️⃣";
+            case 2 -> "2️⃣";
+            case 3 -> "3️⃣";
+            case 4 -> "4️⃣";
+            case 5 -> "5️⃣";
+            case 6 -> "6️⃣";
+            case 7 -> "7️⃣";
+            case 8 -> "8️⃣";
+            case 9 -> "9️⃣";
+            default -> String.valueOf(n);
+        };
     }
 }
