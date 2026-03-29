@@ -10,8 +10,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -60,21 +58,15 @@ public class NewsPublishQueueService {
         return queue.size();
     }
 
-    private boolean isQuietHours() {
-        LocalTime now = LocalTime.now(ZoneId.of("Europe/Moscow"));
-        return now.isAfter(LocalTime.of(1, 0)) && now.isBefore(LocalTime.of(7, 0));
-    }
-
     private void publishLoop() {
         while (true) {
             try {
-                if (paused || isQuietHours()) {
-                    if (isQuietHours()) log.debug("Quiet hours — publishing paused until 07:00 MSK");
+                if (paused) {
                     TimeUnit.SECONDS.sleep(10);
                     continue;
                 }
                 NewsItem item = queue.take(); // blocks until item available
-                if (paused || isQuietHours()) {
+                if (paused) {
                     queue.offer(item); // put back
                     continue;
                 }

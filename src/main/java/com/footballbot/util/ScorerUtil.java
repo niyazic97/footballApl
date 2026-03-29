@@ -91,9 +91,9 @@ public class ScorerUtil {
         if (containsAny(title, List.of("real madrid", "barcelona", "bayern", "psg", "juventus"))) {
             score += 4;
         }
-        // Club prestige — mid-tier (+2)
+        // Club prestige — mid-tier (+3)
         if (containsAny(title, List.of("newcastle", "aston villa", "west ham", "brighton", "everton"))) {
-            score += 2;
+            score += 3;
         }
         // Club prestige — rest of EPL (+2)
         if (containsAny(title, List.of("fulham", "wolves", "wolverhampton", "brentford", "crystal palace",

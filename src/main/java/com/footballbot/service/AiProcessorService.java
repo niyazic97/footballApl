@@ -48,21 +48,15 @@ public class AiProcessorService {
         apiKeys.add(apiKey);
         if (apiKey2 != null && !apiKey2.isBlank()) {
             apiKeys.add(apiKey2);
-            log.info("Groq: using {} API keys (round-robin on 429)", apiKeys.size());
-        } else {
-            log.info("Groq: using 1 API key");
         }
+        log.info("Groq: using {} API key(s), round-robin on every request", apiKeys.size());
     }
 
-    private String currentKey() {
-        return apiKeys.get(keyIndex.get() % apiKeys.size());
-    }
-
-    private String rotateKey() {
-        int next = keyIndex.incrementAndGet();
-        String key = apiKeys.get(next % apiKeys.size());
-        log.warn("Groq 429 — rotated to key #{}", (next % apiKeys.size()) + 1);
-        return key;
+    // Each call gets the next key in rotation — regardless of success or failure
+    private String nextKey() {
+        int idx = keyIndex.getAndIncrement() % apiKeys.size();
+        log.debug("Groq using key #{}", idx + 1);
+        return apiKeys.get(idx);
     }
 
     private static final int MAX_INPUT_CHARS = 3000;
@@ -100,33 +94,22 @@ public class AiProcessorService {
 
     private NewsItem callGroq(NewsItem item, String textForAi, boolean usingFullText) throws Exception {
         var requestBody = buildRequestBody(item, textForAi, usingFullText);
+        String key = nextKey();
 
-        // Try all keys before giving up
-        for (int attempt = 0; attempt < apiKeys.size(); attempt++) {
-            String key = attempt == 0 ? currentKey() : rotateKey();
+        var request = new Request.Builder()
+                .url(apiUrl)
+                .header("Authorization", "Bearer " + key)
+                .post(RequestBody.create(requestBody, MediaType.get("application/json")))
+                .build();
 
-            var request = new Request.Builder()
-                    .url(apiUrl)
-                    .header("Authorization", "Bearer " + key)
-                    .post(RequestBody.create(requestBody, MediaType.get("application/json")))
-                    .build();
-
-            try (var response = httpClient.newCall(request).execute()) {
-                if (response.code() == 429) {
-                    if (attempt < apiKeys.size() - 1) {
-                        log.warn("Groq key #{} rate limited for '{}' — trying next key", attempt + 1, item.getTitleEn());
-                        continue;
-                    }
-                    log.warn("All Groq keys rate limited for '{}' — will retry via queue", item.getTitleEn());
-                    item.setTitleRu(null);
-                    return item;
-                }
-                return parseGroqResponse(item, response.body().string());
+        try (var response = httpClient.newCall(request).execute()) {
+            if (response.code() == 429) {
+                log.warn("Groq rate limited for '{}' — will retry via queue", item.getTitleEn());
+                item.setTitleRu(null);
+                return item;
             }
+            return parseGroqResponse(item, response.body().string());
         }
-
-        item.setTitleRu(null);
-        return item;
     }
 
     private static final String SYSTEM_PROMPT = """

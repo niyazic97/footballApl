@@ -19,12 +19,13 @@ public class AiProcessingQueueService {
     private final AiRankingService aiRankingService;
     private final NewsPublishQueueService newsPublishQueueService;
 
-    // Groq free tier: 6000 tokens/min, each request ~4000 tokens → max 1.5 req/min → 45s gap
-    private static final int GROQ_GAP_SECONDS = 45;
+    // Groq free tier: 6000 tokens/min per account, ~4000 tokens/request
+    // With 2 keys round-robin: each key gets 1 req/70s = ~3428 tokens/min — safe margin
+    private static final int GROQ_GAP_SECONDS = 35;
 
     private final LinkedBlockingQueue<NewsItem> queue = new LinkedBlockingQueue<>();
     private final ConcurrentHashMap<String, Integer> attempts = new ConcurrentHashMap<>();
-    private static final int MAX_ATTEMPTS = 3;
+    private static final int MAX_ATTEMPTS = 5;
 
     public void enqueue(NewsItem item) {
         if (queue.stream().anyMatch(i -> i.getId().equals(item.getId()))) {
