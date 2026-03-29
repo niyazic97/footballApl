@@ -19,8 +19,8 @@ public class AiProcessingQueueService {
     private final AiRankingService aiRankingService;
     private final NewsPublishQueueService newsPublishQueueService;
 
-    // Groq free tier: ~100 tokens/sec, each request ~1800 tokens → 18s minimum gap
-    private static final int GROQ_GAP_SECONDS = 20;
+    // Groq free tier: 6000 tokens/min, each request ~4000 tokens → max 1.5 req/min → 45s gap
+    private static final int GROQ_GAP_SECONDS = 45;
 
     private final LinkedBlockingQueue<NewsItem> queue = new LinkedBlockingQueue<>();
     private final ConcurrentHashMap<String, Integer> attempts = new ConcurrentHashMap<>();
