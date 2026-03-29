@@ -24,6 +24,9 @@
     </logger>
     <logger name="org.springframework" level="WARN"/>
     <logger name="org.hibernate" level="WARN"/>
+    <logger name="org.telegram" level="DEBUG">
+        <appender-ref ref="CONSOLE"/>
+    </logger>
 
     <root level="WARN">
         <appender-ref ref="CONSOLE"/>

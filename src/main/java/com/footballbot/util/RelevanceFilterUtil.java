@@ -17,6 +17,11 @@ public class RelevanceFilterUtil {
             "женской", "женская", "женщины", "женский"
     );
 
+    // Women's football URL path segments — block even if title looks neutral
+    private static final List<String> BLOCKED_WOMEN_URL_SEGMENTS = List.of(
+            "women", "womens", "wsl", "ladies", "female", "girls"
+    );
+
     public static final Set<String> EPL_CLUBS = Set.of(
             "arsenal", "chelsea", "liverpool", "manchester city", "man city",
             "manchester united", "man united", "man utd", "tottenham", "spurs",
@@ -55,6 +60,20 @@ public class RelevanceFilterUtil {
             if (text.contains(term)) {
                 log.info("FILTERED women's football: {}", item.getTitleEn());
                 return false;
+            }
+        }
+
+        // RULE 0b — Check URL path for women's content (catches "Arsenal Women" articles
+        // where the title only says "Arsenal" but URL contains /women/ or /wsl/)
+        if (item.getUrl() != null) {
+            String urlLower = item.getUrl().toLowerCase();
+            for (String segment : BLOCKED_WOMEN_URL_SEGMENTS) {
+                // match as a path segment: /women/ or -women- or -women at end
+                if (urlLower.contains("/" + segment) || urlLower.contains("-" + segment + "-")
+                        || urlLower.contains("-" + segment + "/") || urlLower.endsWith("-" + segment)) {
+                    log.info("FILTERED women's football (URL): {}", item.getTitleEn());
+                    return false;
+                }
             }
         }
 

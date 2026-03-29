@@ -1,14 +1,44 @@
 package com.footballbot.util;
 
 import com.footballbot.model.NewsItem;
+import com.footballbot.repository.PlayerNameRepository;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
+@Component
+@RequiredArgsConstructor
+@Slf4j
 public class ScorerUtil {
 
-    public static int score(NewsItem item) {
+    private final PlayerNameRepository playerNameRepository;
+
+    // In-memory cache of player names → bonus, refreshed from DB
+    private Map<String, Integer> playerScoreMap = new ConcurrentHashMap<>();
+
+    @PostConstruct
+    public void loadPlayerNames() {
+        refreshCache();
+    }
+
+    public int getCacheSize() { return playerScoreMap.size(); }
+
+    public void refreshCache() {
+        var map = new ConcurrentHashMap<String, Integer>();
+        playerNameRepository.findAll().forEach(p -> map.put(p.getName(), p.getScoreBonus()));
+        playerScoreMap = map;
+        log.info("Player name cache loaded: {} entries", playerScoreMap.size());
+    }
+
+    public int score(NewsItem item) {
         String title = item.getTitleEn() != null ? item.getTitleEn().toLowerCase() : "";
         int score = 0;
 
@@ -65,15 +95,26 @@ public class ScorerUtil {
         if (containsAny(title, List.of("newcastle", "aston villa", "west ham", "brighton", "everton"))) {
             score += 2;
         }
-
-        // Player prestige (+3)
-        if (containsAny(title, List.of("haaland", "salah", "de bruyne", "saka", "bellingham",
-                "vinicius", "mbappe", "kane", "rashford", "palmer"))) {
-            score += 3;
-        }
-        // Player prestige (+2)
-        if (containsAny(title, List.of("trent", "alisson", "ederson", "martial", "sterling"))) {
+        // Club prestige — rest of EPL (+2)
+        if (containsAny(title, List.of("fulham", "wolves", "wolverhampton", "brentford", "crystal palace",
+                "nottingham forest", "bournemouth", "leicester", "ipswich", "southampton"))) {
             score += 2;
+        }
+
+        // Player prestige from DB
+        if (!playerScoreMap.isEmpty()) {
+            for (var entry : playerScoreMap.entrySet()) {
+                if (title.contains(entry.getKey())) {
+                    score += entry.getValue();
+                    break; // one player match is enough
+                }
+            }
+        } else {
+            // Fallback if DB not loaded yet
+            if (containsAny(title, List.of("haaland", "salah", "de bruyne", "saka", "bellingham",
+                    "vinicius", "mbappe", "kane", "rashford", "palmer", "odegaard"))) {
+                score += 3;
+            }
         }
 
         // Source bonus (+1)
@@ -84,7 +125,7 @@ public class ScorerUtil {
 
         // Freshness bonus
         if (item.getPublishedAt() != null) {
-            long minutesAgo = ChronoUnit.MINUTES.between(item.getPublishedAt(), LocalDateTime.now());
+            long minutesAgo = ChronoUnit.MINUTES.between(item.getPublishedAt(), LocalDateTime.now(ZoneId.of("Europe/Moscow")));
             if (minutesAgo <= 30) {
                 score += 2;
             } else if (minutesAgo <= 60) {
@@ -95,7 +136,7 @@ public class ScorerUtil {
         return Math.max(0, Math.min(20, score));
     }
 
-    private static boolean containsAny(String text, List<String> keywords) {
+    private boolean containsAny(String text, List<String> keywords) {
         return keywords.stream().anyMatch(text::contains);
     }
 }

@@ -1,6 +1,7 @@
 package com.footballbot.service;
 
 import com.footballbot.repository.PublishedNewsRepository;
+import com.footballbot.util.ScorerUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,6 +20,8 @@ public class BotCommandService {
     private final NewsPublishQueueService newsPublishQueueService;
     private final HealthMonitorService healthMonitorService;
     private final PublishedNewsRepository publishedNewsRepository;
+    private final PlayerRosterService playerRosterService;
+    private final ScorerUtil scorerUtil;
 
     @Value("${admin.telegram.user.id:}")
     private String adminUserId;
@@ -26,10 +29,14 @@ public class BotCommandService {
     public BotCommandService(
             @Lazy NewsPublishQueueService newsPublishQueueService,
             HealthMonitorService healthMonitorService,
-            PublishedNewsRepository publishedNewsRepository) {
+            PublishedNewsRepository publishedNewsRepository,
+            PlayerRosterService playerRosterService,
+            ScorerUtil scorerUtil) {
         this.newsPublishQueueService = newsPublishQueueService;
         this.healthMonitorService = healthMonitorService;
         this.publishedNewsRepository = publishedNewsRepository;
+        this.playerRosterService = playerRosterService;
+        this.scorerUtil = scorerUtil;
     }
 
     public boolean isAdmin(String userId) {
@@ -48,7 +55,12 @@ public class BotCommandService {
                 yield "▶️ Публикация возобновлена";
             }
             case "/queue" -> buildQueueMessage();
-            default -> "❓ Неизвестная команда. Доступные: /status, /pause, /resume, /queue";
+            case "/refreshrosters" -> {
+                playerRosterService.refreshRosters();
+                scorerUtil.refreshCache();
+                yield "✅ Ростеры обновлены: " + scorerUtil.getCacheSize() + " игроков загружено";
+            }
+            default -> "❓ Неизвестная команда. Доступные: /status, /pause, /resume, /queue, /refreshrosters";
         };
     }
 

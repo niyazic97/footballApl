@@ -13,6 +13,7 @@ import com.footballbot.service.NewsPublishQueueService;
 import com.footballbot.service.PreMatchAnalysisService;
 import com.footballbot.service.RssParserService;
 import com.footballbot.service.TelegramPublisherService;
+import com.footballbot.service.PlayerRosterService;
 import com.footballbot.service.WeeklyRoundupService;
 import com.footballbot.util.RelevanceFilterUtil;
 import com.footballbot.util.ScorerUtil;
@@ -47,6 +48,8 @@ public class NewsScheduler {
     private final MatchResultService matchResultService;
     private final HealthMonitorService healthMonitorService;
     private final LiveGoalService liveGoalService;
+    private final PlayerRosterService playerRosterService;
+    private final ScorerUtil scorerUtil;
 
     @Value("${scheduler.max.posts.per.run}")
     private int maxPostsPerRun;
@@ -62,7 +65,7 @@ public class NewsScheduler {
         // Step 1: fetch all news
         List<NewsItem> allNews = new ArrayList<>(rssParserService.fetchAllNews());
         log.info("Total fetched: {}", allNews.size());
-        allNews.forEach(item -> log.info("  [score={}] {}", ScorerUtil.score(item), item.getTitleEn()));
+        allNews.forEach(item -> log.info("  [score={}] {}", scorerUtil.score(item), item.getTitleEn()));
 
         // Step 1.5: if bot was down for 8+ hours, skip news older than 1 hour
         boolean longDowntime = !publishedNewsRepository.existsByPostedAtAfter(
@@ -93,7 +96,7 @@ public class NewsScheduler {
         var deduplicated = deduplicationService.filterDuplicates(relevant);
 
         // Step 5: set importanceScore and filter by minScore
-        deduplicated.forEach(item -> item.setImportanceScore(ScorerUtil.score(item)));
+        deduplicated.forEach(item -> item.setImportanceScore(scorerUtil.score(item)));
         var candidates = deduplicated.stream()
                 .filter(item -> {
                     int s = item.getImportanceScore();
@@ -135,6 +138,14 @@ public class NewsScheduler {
     public void runDailyCacheRefresh() {
         log.info("Refreshing daily match cache...");
         matchCacheService.refreshTodayMatches();
+    }
+
+    // JOB 2b — Daily player roster refresh at 03:00 MSK
+    @Scheduled(cron = "0 0 3 * * *", zone = "Europe/Moscow")
+    public void runRosterRefresh() {
+        log.info("Refreshing player rosters...");
+        playerRosterService.refreshRosters();
+        scorerUtil.refreshCache();
     }
 
     // JOB 3 — Daily match schedule post at 09:00 MSK
