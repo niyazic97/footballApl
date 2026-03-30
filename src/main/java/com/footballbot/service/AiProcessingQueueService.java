@@ -6,7 +6,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -24,8 +23,6 @@ public class AiProcessingQueueService {
     private static final int GROQ_GAP_SECONDS = 35;
 
     private final LinkedBlockingQueue<NewsItem> queue = new LinkedBlockingQueue<>();
-    private final ConcurrentHashMap<String, Integer> attempts = new ConcurrentHashMap<>();
-    private static final int MAX_ATTEMPTS = 5;
 
     public void enqueue(NewsItem item) {
         if (queue.stream().anyMatch(i -> i.getId().equals(item.getId()))) {
@@ -56,19 +53,11 @@ public class AiProcessingQueueService {
                 aiProcessorService.process(item);
 
                 if (item.getTitleRu() != null && !item.getTitleRu().isBlank()) {
-                    attempts.remove(item.getId());
                     item.setFinalScore(aiRankingService.getFinalScore(item));
                     newsPublishQueueService.enqueue(item);
                     log.info("AI done, enqueued for publish: '{}'", item.getTitleRu());
                 } else {
-                    int attempt = attempts.merge(item.getId(), 1, Integer::sum);
-                    if (attempt < MAX_ATTEMPTS) {
-                        queue.offer(item); // put back at end of queue
-                        log.warn("AI failed for '{}' (attempt {}/{}) — requeued", item.getTitleEn(), attempt, MAX_ATTEMPTS);
-                    } else {
-                        attempts.remove(item.getId());
-                        log.warn("AI failed for '{}' after {} attempts — dropped", item.getTitleEn(), MAX_ATTEMPTS);
-                    }
+                    log.warn("AI failed for '{}' — dropped", item.getTitleEn());
                 }
 
                 if (!queue.isEmpty()) {
