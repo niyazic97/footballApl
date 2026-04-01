@@ -51,23 +51,59 @@ public class VkPublisherService {
         var title = item.getTitleRu() != null ? item.getTitleRu() : item.getTitleEn();
         var summary = item.getSummaryRu() != null ? item.getSummaryRu() : item.getSummaryEn();
 
-        sb.append(title).append("\n\n");
+        // Title with category emoji
+        String titleEmoji = detectEmoji(item);
+        sb.append(titleEmoji).append(" ").append(title.toUpperCase()).append("\n\n");
 
+        // Summary
         if (summary != null && !summary.isBlank()) {
             sb.append(summary).append("\n\n");
         }
 
+        // Direct quote
         if (item.getQuote() != null && !item.getQuote().isBlank()) {
-            sb.append("🗣 ").append(item.getQuote()).append("\n\n");
+            sb.append("💬 ").append(item.getQuote()).append("\n\n");
         }
 
+        // AI commentary
         if (item.getAiCommentary() != null && !item.getAiCommentary().isBlank()) {
-            sb.append(item.getAiCommentary()).append("\n\n");
+            sb.append("💭 ").append(item.getAiCommentary()).append("\n\n");
+        }
+
+        // Separator + hashtags + source
+        sb.append("━━━━━━━━━━━━━━━━━━━━\n");
+
+        // Hashtags from tags
+        if (item.getTags() != null && !item.getTags().isEmpty()) {
+            item.getTags().stream()
+                    .filter(t -> t != null && !t.isBlank())
+                    .limit(4)
+                    .forEach(t -> sb.append("#").append(t.replace(" ", "_")).append(" "));
+            sb.append("#АПЛ\n");
+        } else {
+            sb.append("#АПЛ #английскийфутбол\n");
         }
 
         sb.append("🔗 ").append(item.getUrl());
 
         return sb.toString().trim();
+    }
+
+    private String detectEmoji(NewsItem item) {
+        String title = item.getTitleEn() != null ? item.getTitleEn().toLowerCase() : "";
+        if (containsAny(title, "transfer", "sign", "deal", "bid", "fee", "loan")) return "💰";
+        if (containsAny(title, "sacked", "fired", "resign", "appointed")) return "🚨";
+        if (containsAny(title, "injury", "injured", "out", "miss", "fitness")) return "🏥";
+        if (containsAny(title, "goal", "hat-trick", "brace", "score", "result", "win", "beat")) return "⚽";
+        if (containsAny(title, "champions league", "ucl", "europa")) return "🏆";
+        if (containsAny(title, "preview", "preview", "press conference", "interview")) return "🎙";
+        if (containsAny(title, "ban", "suspended", "red card")) return "🟥";
+        return "📰";
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        for (String k : keywords) if (text.contains(k)) return true;
+        return false;
     }
 
     @SuppressWarnings("unchecked")

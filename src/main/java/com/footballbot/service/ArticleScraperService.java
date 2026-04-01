@@ -47,6 +47,18 @@ public class ArticleScraperService {
                 if (!guardian.isEmpty()) text = guardian.text();
             }
 
+            // Daily Mail specific
+            if ((text == null || text.length() < 100) && url != null && url.contains("dailymail.co.uk")) {
+                var dm = doc.select("p.mol-para-with-font");
+                if (!dm.isEmpty()) text = dm.text();
+            }
+
+            // The Sun specific
+            if ((text == null || text.length() < 100) && url != null && url.contains("thesun.co.uk")) {
+                var sun = doc.select(".article__content p, .article-content p");
+                if (!sun.isEmpty()) text = sun.text();
+            }
+
             // Generic selectors
             if (text == null || text.length() < 100) {
                 var body = doc.select(".article-body, .story-body, .post-content, .entry-content, .article__body");

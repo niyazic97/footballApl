@@ -1,6 +1,7 @@
 package com.footballbot.service;
 
 import com.footballbot.model.NewsItem;
+import com.footballbot.util.ClubEmojiUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -23,8 +24,9 @@ public class FormatterService {
         var summary = item.getSummaryRu() != null ? item.getSummaryRu() : item.getSummaryEn();
         var category = detectCategory(item.getTitleEn(), item.getLeague());
 
+        var clubEmoji = ClubEmojiUtil.getEmojiHtml(item.getTitleEn());
         var sb = new StringBuilder();
-        sb.append("<b>").append(category).append(" ").append(title).append("</b>").append("\n\n");
+        sb.append("<b>").append(clubEmoji).append(category).append(" ").append(title).append("</b>").append("\n\n");
         if (summary != null && !summary.isBlank()) {
             sb.append(summary).append("\n\n");
         }
@@ -71,6 +73,9 @@ public class FormatterService {
             case "www.manchestereveningnews.co.uk" -> "Manchester Evening News";
             case "www.liverpoolecho.co.uk" -> "Liverpool Echo";
             case "www.birminghammail.co.uk" -> "Birmingham Mail";
+            case "www.dailymail.co.uk" -> "Daily Mail";
+            case "www.thesun.co.uk" -> "The Sun";
+            case "www.telegraph.co.uk" -> "The Telegraph";
             default -> "Источник";
         };
     }

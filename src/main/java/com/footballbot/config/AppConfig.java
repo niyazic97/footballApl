@@ -37,7 +37,11 @@ public class AppConfig {
             // Liverpool Echo (Liverpool + Everton focused)
             "https://www.liverpoolecho.co.uk/sport/football/rss.xml",
             // Birmingham Mail (Aston Villa + Birmingham focused)
-            "https://www.birminghammail.co.uk/sport/football/rss.xml"
+            "https://www.birminghammail.co.uk/sport/football/rss.xml",
+            // Daily Mail Football
+            "https://www.dailymail.co.uk/sport/football/index.rss",
+            // The Sun Football
+            "https://www.thesun.co.uk/sport/football/feed/"
     );
 
     @Bean
@@ -46,6 +50,11 @@ public class AppConfig {
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)
+                .addInterceptor(chain -> chain.proceed(
+                        chain.request().newBuilder()
+                                .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                                .build()
+                ))
                 .build();
     }
 
