@@ -1,6 +1,7 @@
 package com.footballbot.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.footballbot.config.GroqProperties;
 import com.footballbot.model.FixtureIdMapping;
 import com.footballbot.model.MatchDay;
 import com.footballbot.repository.FixtureIdMappingRepository;
@@ -28,21 +29,14 @@ public class PostMatchStatsService {
     private final TelegramPublisherService telegramPublisherService;
     private final FixtureIdMappingRepository fixtureMappingRepository;
     private final MatchScheduleService matchScheduleService;
+    private final GroqRateLimiter groqRateLimiter;
+    private final GroqProperties groqProperties;
 
     @Value("${apifootball.api.key:}")
     private String apiKey;
 
     @Value("${apifootball.api.url:https://v3.football.api-sports.io}")
     private String apiUrl;
-
-    @Value("${groq.api.key}")
-    private String groqKey;
-
-    @Value("${groq.api.url}")
-    private String groqUrl;
-
-    @Value("${groq.model}")
-    private String groqModel;
 
     private static final ZoneId MOSCOW = ZoneId.of("Europe/Moscow");
 
@@ -106,7 +100,8 @@ public class PostMatchStatsService {
                     .build();
 
             try (var response = httpClient.newCall(request).execute()) {
-                var root = objectMapper.readValue(response.body().string(), Map.class);
+                var body = response.body();
+                var root = objectMapper.readValue(body != null ? body.string() : "{}", Map.class);
                 var fixtures = (List<Map<String, Object>>) root.get("response");
                 if (fixtures == null || fixtures.isEmpty()) return null;
 
@@ -159,7 +154,8 @@ public class PostMatchStatsService {
                     .build();
 
             try (var response = httpClient.newCall(request).execute()) {
-                var root = objectMapper.readValue(response.body().string(), Map.class);
+                var body = response.body();
+                var root = objectMapper.readValue(body != null ? body.string() : "{}", Map.class);
                 return (List<Map<String, Object>>) root.get("response");
             }
         } catch (Exception e) {
@@ -224,7 +220,7 @@ public class PostMatchStatsService {
         if (topHome == null || topAway == null) return null;
 
         // Grok commentary
-        String commentary = getStatsCommentary(homeRu, awayRu, match, topHome, topAway, bestPasser);
+        String commentary = getStatsCommentary(homeRu, awayRu, match);
 
         var sb = new StringBuilder();
         sb.append("📈 Статистика матча\n\n");
@@ -261,33 +257,40 @@ public class PostMatchStatsService {
     }
 
     @SuppressWarnings("unchecked")
-    private String getStatsCommentary(String homeRu, String awayRu, MatchDay match,
-                                       Object topHome, Object topAway, Object bestPasser) {
+    private String getStatsCommentary(String homeRu, String awayRu, MatchDay match) {
         try {
             String prompt = "Match: " + homeRu + " " + match.getHomeScore() + ":" + match.getAwayScore() + " " + awayRu
                     + ". Write 2 sentences of stats commentary in Russian. Respond ONLY with JSON: {\"stats_commentary\": \"...\"}";
 
             var body = objectMapper.writeValueAsString(Map.of(
-                    "model", groqModel,
+                    "model", groqProperties.getModel(),
                     "messages", List.of(Map.of("role", "user", "content", prompt))
             ));
 
-            var request = new Request.Builder()
-                    .url(groqUrl)
-                    .header("Authorization", "Bearer " + groqKey)
+            var httpRequest = new Request.Builder()
+                    .url(groqProperties.getApi().getUrl())
+                    .header("Authorization", "Bearer " + groqProperties.getApi().getKey())
                     .post(RequestBody.create(body, MediaType.get("application/json")))
                     .build();
 
-            try (var response = httpClient.newCall(request).execute()) {
-                var root = objectMapper.readValue(response.body().string(), Map.class);
-                var choices = (List<Map<String, Object>>) root.get("choices");
-                if (choices == null || choices.isEmpty()) return null;
-                var message = (Map<String, Object>) choices.get(0).get("message");
-                String text = (String) message.get("content");
-                text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
-                var parsed = objectMapper.readValue(text, Map.class);
-                return (String) parsed.get("stats_commentary");
-            }
+            String responseJson = groqRateLimiter.submit(
+                    "post-match-stats:" + homeRu + "vs" + awayRu,
+                    () -> {
+                        try (var response = httpClient.newCall(httpRequest).execute()) {
+                            var rb = response.body();
+                            return rb != null ? rb.string() : "";
+                        }
+                    }
+            ).get();
+
+            var root = objectMapper.readValue(responseJson, Map.class);
+            var choices = (List<Map<String, Object>>) root.get("choices");
+            if (choices == null || choices.isEmpty()) return null;
+            var message = (Map<String, Object>) choices.get(0).get("message");
+            String text = (String) message.get("content");
+            text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
+            var parsed = objectMapper.readValue(text, Map.class);
+            return (String) parsed.get("stats_commentary");
         } catch (Exception e) {
             return null;
         }

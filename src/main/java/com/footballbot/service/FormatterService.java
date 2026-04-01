@@ -1,7 +1,6 @@
 package com.footballbot.service;
 
 import com.footballbot.model.NewsItem;
-import com.footballbot.util.ClubEmojiUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -24,9 +23,8 @@ public class FormatterService {
         var summary = item.getSummaryRu() != null ? item.getSummaryRu() : item.getSummaryEn();
         var category = detectCategory(item.getTitleEn(), item.getLeague());
 
-        var clubEmoji = ClubEmojiUtil.getEmojiHtml(item.getTitleEn());
         var sb = new StringBuilder();
-        sb.append("<b>").append(clubEmoji).append(category).append(" ").append(title).append("</b>").append("\n\n");
+        sb.append("<b>").append(category).append(" ").append(title).append("</b>").append("\n\n");
         if (summary != null && !summary.isBlank()) {
             sb.append(summary).append("\n\n");
         }

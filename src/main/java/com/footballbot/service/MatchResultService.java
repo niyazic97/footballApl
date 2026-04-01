@@ -1,6 +1,7 @@
 package com.footballbot.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.footballbot.config.GroqProperties;
 import com.footballbot.model.MatchDay;
 import com.footballbot.model.PublishedResult;
 import com.footballbot.repository.PublishedResultRepository;
@@ -28,15 +29,8 @@ public class MatchResultService {
     private final TelegramPublisherService telegramPublisherService;
     private final PublishedResultRepository publishedResultRepository;
     private final MatchScheduleService matchScheduleService;
-
-    @Value("${groq.api.key}")
-    private String groqApiKey;
-
-    @Value("${groq.api.url}")
-    private String groqApiUrl;
-
-    @Value("${groq.model}")
-    private String groqModel;
+    private final GroqRateLimiter groqRateLimiter;
+    private final GroqProperties groqProperties;
 
     @Value("${football.api.key:}")
     private String footballApiKey;
@@ -44,6 +38,7 @@ public class MatchResultService {
     @Value("${football.api.url:https://api.football-data.org/v4}")
     private String footballApiUrl;
 
+    @SuppressWarnings("unchecked")
     public void generateAndPost(MatchDay match) {
         if (match.getMatchId() == null) return;
         String matchKey = String.valueOf(match.getMatchId());
@@ -67,7 +62,6 @@ public class MatchResultService {
             String scorersList = goals.stream()
                     .map(g -> {
                         var scorer = (Map<String, Object>) g.get("scorer");
-                        var team = (Map<String, Object>) g.get("team");
                         int minute = g.get("minute") instanceof Number n ? n.intValue() : 0;
                         return (scorer != null ? scorer.get("name") : "Unknown") + " " + minute + "'";
                     })
@@ -99,7 +93,8 @@ public class MatchResultService {
                 .header("X-Auth-Token", footballApiKey)
                 .build();
         try (var response = httpClient.newCall(request).execute()) {
-            var root = objectMapper.readValue(response.body().string(), Map.class);
+            var body = response.body();
+            var root = objectMapper.readValue(body != null ? body.string() : "{}", Map.class);
             return (Map<String, Object>) root.get("match");
         }
     }
@@ -123,25 +118,33 @@ public class MatchResultService {
                     htHome, htAway, scorersList.isBlank() ? "no goals" : scorersList);
 
             var body = objectMapper.writeValueAsString(Map.of(
-                    "model", groqModel,
+                    "model", groqProperties.getModel(),
                     "messages", List.of(Map.of("role", "user", "content", prompt))
             ));
 
-            var request = new Request.Builder()
-                    .url(groqApiUrl)
-                    .header("Authorization", "Bearer " + groqApiKey)
+            var httpRequest = new Request.Builder()
+                    .url(groqProperties.getApi().getUrl())
+                    .header("Authorization", "Bearer " + groqProperties.getApi().getKey())
                     .post(RequestBody.create(body, MediaType.get("application/json")))
                     .build();
 
-            try (var response = httpClient.newCall(request).execute()) {
-                var root = objectMapper.readValue(response.body().string(), Map.class);
-                var choices = (List<Map<String, Object>>) root.get("choices");
-                if (choices == null || choices.isEmpty()) return Map.of();
-                var message = (Map<String, Object>) choices.get(0).get("message");
-                var text = (String) message.get("content");
-                text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
-                return objectMapper.readValue(text, Map.class);
-            }
+            String responseJson = groqRateLimiter.submit(
+                    "match-result:" + match.getHomeTeam() + "vs" + match.getAwayTeam(),
+                    () -> {
+                        try (var response = httpClient.newCall(httpRequest).execute()) {
+                            var rb = response.body();
+                            return rb != null ? rb.string() : "";
+                        }
+                    }
+            ).get();
+
+            var root = objectMapper.readValue(responseJson, Map.class);
+            var choices = (List<Map<String, Object>>) root.get("choices");
+            if (choices == null || choices.isEmpty()) return Map.of();
+            var message = (Map<String, Object>) choices.get(0).get("message");
+            var text = (String) message.get("content");
+            text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
+            return objectMapper.readValue(text, Map.class);
         } catch (Exception e) {
             log.warn("AI reaction failed: {}", e.getMessage());
             return Map.of();

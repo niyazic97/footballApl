@@ -1,21 +1,23 @@
 package com.footballbot.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.footballbot.config.GroqProperties;
 import com.footballbot.model.NewsItem;
 import com.footballbot.util.EntityDictionaryUtil;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
@@ -26,28 +28,19 @@ public class AiProcessorService {
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final ArticleScraperService articleScraperService;
-
-    @Value("${groq.api.key}")
-    private String apiKey;
-
-    @Value("${groq.api.key2:}")
-    private String apiKey2;
-
-    @Value("${groq.api.url}")
-    private String apiUrl;
-
-    @Value("${groq.model}")
-    private String model;
+    private final GroqRateLimiter groqRateLimiter;
+    private final GroqProperties groqProperties;
 
     private List<String> apiKeys;
     private final AtomicInteger keyIndex = new AtomicInteger(0);
 
-    @jakarta.annotation.PostConstruct
+    @PostConstruct
     public void initKeys() {
         apiKeys = new ArrayList<>();
-        apiKeys.add(apiKey);
-        if (apiKey2 != null && !apiKey2.isBlank()) {
-            apiKeys.add(apiKey2);
+        apiKeys.add(groqProperties.getApi().getKey());
+        String key2 = groqProperties.getApi().getKey2();
+        if (key2 != null && !key2.isBlank()) {
+            apiKeys.add(key2);
         }
         log.info("Groq: using {} API key(s), round-robin on every request", apiKeys.size());
     }
@@ -96,20 +89,31 @@ public class AiProcessorService {
         var requestBody = buildRequestBody(item, textForAi, usingFullText);
         String key = nextKey();
 
-        var request = new Request.Builder()
-                .url(apiUrl)
+        var httpRequest = new Request.Builder()
+                .url(groqProperties.getApi().getUrl())
                 .header("Authorization", "Bearer " + key)
                 .post(RequestBody.create(requestBody, MediaType.get("application/json")))
                 .build();
 
-        try (var response = httpClient.newCall(request).execute()) {
-            if (response.code() == 429) {
-                item.setTitleRu(null);
-                item.setRateLimited(true);
-                return item;
-            }
-            return parseGroqResponse(item, response.body().string());
+        // Route through centralized rate limiter — shared with all other Groq callers
+        Future<String> future = groqRateLimiter.submit(
+                "news:" + item.getTitleEn(),
+                () -> {
+                    try (var response = httpClient.newCall(httpRequest).execute()) {
+                        if (response.code() == 429) return "__RATE_LIMITED__";
+                        var body = response.body();
+                        return body != null ? body.string() : "";
+                    }
+                }
+        );
+
+        String responseBody = future.get();
+        if ("__RATE_LIMITED__".equals(responseBody)) {
+            item.setTitleRu(null);
+            item.setRateLimited(true);
+            return item;
         }
+        return parseGroqResponse(item, responseBody);
     }
 
     private static final String SYSTEM_PROMPT = """
@@ -154,7 +158,7 @@ public class AiProcessorService {
 
     private String buildRequestBody(NewsItem item, String textForAi, boolean usingFullText) throws Exception {
         var body = Map.of(
-                "model", model,
+                "model", groqProperties.getModel(),
                 "temperature", 0.7,
                 "max_tokens", 2500,
                 "messages", List.of(
@@ -220,9 +224,8 @@ public class AiProcessorService {
         if (!quote.contains(":")) return false;
         // Reject AI explanations like "Артета не цитируется..."
         String lower = quote.toLowerCase();
-        if (lower.contains("не цитируется") || lower.contains("нет цитаты") ||
-            lower.contains("no quote") || lower.contains("not quoted") ||
-            lower.contains("не упоминается")) return false;
-        return true;
+        return !lower.contains("не цитируется") && !lower.contains("нет цитаты") &&
+               !lower.contains("no quote") && !lower.contains("not quoted") &&
+               !lower.contains("не упоминается");
     }
 }

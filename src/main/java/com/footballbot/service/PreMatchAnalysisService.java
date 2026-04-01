@@ -1,6 +1,7 @@
 package com.footballbot.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.footballbot.config.GroqProperties;
 import com.footballbot.model.MatchDay;
 import com.footballbot.model.PublishedAnalysis;
 import com.footballbot.repository.PublishedAnalysisRepository;
@@ -10,7 +11,6 @@ import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -27,21 +27,8 @@ public class PreMatchAnalysisService {
     private final TelegramPublisherService telegramPublisherService;
     private final PublishedAnalysisRepository publishedAnalysisRepository;
     private final MatchScheduleService matchScheduleService;
-
-    @Value("${groq.api.key}")
-    private String groqApiKey;
-
-    @Value("${groq.api.url}")
-    private String groqApiUrl;
-
-    @Value("${groq.model}")
-    private String groqModel;
-
-    @Value("${football.api.key:}")
-    private String footballApiKey;
-
-    @Value("${football.api.url:https://api.football-data.org/v4}")
-    private String footballApiUrl;
+    private final GroqRateLimiter groqRateLimiter;
+    private final GroqProperties groqProperties;
 
     public void generateAndPost(MatchDay match) {
         if (match.getMatchId() == null) {
@@ -70,6 +57,7 @@ public class PreMatchAnalysisService {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private String buildAnalysisPost(MatchDay match) throws Exception {
         String homeRu = matchScheduleService.translateTeam(match.getHomeTeam());
         String awayRu = matchScheduleService.translateTeam(match.getAwayTeam());
@@ -92,18 +80,28 @@ public class PreMatchAnalysisService {
                 Kickoff: %s MSK""", match.getHomeTeam(), match.getAwayTeam(), leagueName, kickoffStr);
 
         var body = objectMapper.writeValueAsString(Map.of(
-                "model", groqModel,
+                "model", groqProperties.getModel(),
                 "messages", List.of(Map.of("role", "user", "content", prompt))
         ));
 
-        var request = new Request.Builder()
-                .url(groqApiUrl)
-                .header("Authorization", "Bearer " + groqApiKey)
+        var httpRequest = new Request.Builder()
+                .url(groqProperties.getApi().getUrl())
+                .header("Authorization", "Bearer " + groqProperties.getApi().getKey())
                 .post(RequestBody.create(body, MediaType.get("application/json")))
                 .build();
 
-        try (var response = httpClient.newCall(request).execute()) {
-            var root = objectMapper.readValue(response.body().string(), Map.class);
+        String responseJson = groqRateLimiter.submit(
+                "pre-match:" + match.getHomeTeam() + "vs" + match.getAwayTeam(),
+                () -> {
+                    try (var response = httpClient.newCall(httpRequest).execute()) {
+                        var rb = response.body();
+                        return rb != null ? rb.string() : "";
+                    }
+                }
+        ).get();
+
+        {
+            var root = objectMapper.readValue(responseJson, Map.class);
             var choices = (List<Map<String, Object>>) root.get("choices");
             if (choices == null || choices.isEmpty()) throw new RuntimeException("No choices in response");
 

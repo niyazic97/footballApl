@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -39,7 +39,7 @@ public class NewsPublishQueueService {
     public void startPublisherThread() {
         // Restore last publish time from DB so restarts don't break the delay
         publishedNewsRepository.findTopByOrderByPostedAtDesc().ifPresent(last -> {
-            lastPublishedAt = last.getPostedAt().toInstant(ZoneOffset.UTC).toEpochMilli();
+            lastPublishedAt = last.getPostedAt().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
             log.info("Restored lastPublishedAt from DB: {}", last.getPostedAt());
         });
 

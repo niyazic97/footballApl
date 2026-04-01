@@ -11,6 +11,7 @@ import com.footballbot.service.MatchCacheService;
 import com.footballbot.service.MatchResultService;
 import com.footballbot.service.MatchScheduleService;
 import com.footballbot.service.NewsPublishQueueService;
+import com.footballbot.service.PostMatchStatsService;
 import com.footballbot.service.PreMatchAnalysisService;
 import com.footballbot.service.RssParserService;
 import com.footballbot.service.TelegramPublisherService;
@@ -48,6 +49,7 @@ public class NewsScheduler {
     private final PreMatchAnalysisService preMatchAnalysisService;
     private final WeeklyRoundupService weeklyRoundupService;
     private final MatchResultService matchResultService;
+    private final PostMatchStatsService postMatchStatsService;
     private final HealthMonitorService healthMonitorService;
     private final LiveGoalService liveGoalService;
     private final PlayerRosterService playerRosterService;
@@ -161,6 +163,10 @@ public class NewsScheduler {
             if ("FINISHED".equals(match.getStatus())) {
                 matchCacheService.refreshMatchStatus(match.getMatchId());
                 matchResultService.generateAndPost(match);
+                // Post-match stats run in background (waits 10min for data to populate)
+                Thread statsThread = new Thread(() -> postMatchStatsService.generateAndPost(match), "post-match-stats");
+                statsThread.setDaemon(true);
+                statsThread.start();
             }
         }
     }

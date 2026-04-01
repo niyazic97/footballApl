@@ -18,10 +18,6 @@ public class AiProcessingQueueService {
     private final AiRankingService aiRankingService;
     private final NewsPublishQueueService newsPublishQueueService;
 
-    // Groq free tier: 12000 tokens/min per account, ~4000 tokens/request
-    // 90s gap: each key gets 1 req/180s = ~1333 tokens/min — safe even after restarts
-    private static final int GROQ_GAP_SECONDS = 90;
-
     private final LinkedBlockingQueue<NewsItem> queue = new LinkedBlockingQueue<>();
 
     public void enqueue(NewsItem item) {
@@ -37,11 +33,12 @@ public class AiProcessingQueueService {
     }
 
     @PostConstruct
+    @SuppressWarnings("unused") // called by Spring via @PostConstruct
     public void startProcessingThread() {
         Thread thread = new Thread(this::processLoop, "ai-processor");
         thread.setDaemon(true);
         thread.start();
-        log.info("AI processing queue started (gap={}s between Groq calls)", GROQ_GAP_SECONDS);
+        log.info("AI processing queue started (gap enforced by GroqRateLimiter)");
     }
 
     private void processLoop() {
@@ -65,8 +62,6 @@ public class AiProcessingQueueService {
                 } else {
                     log.warn("AI failed for '{}' — dropped", item.getTitleEn());
                 }
-
-                TimeUnit.SECONDS.sleep(GROQ_GAP_SECONDS);
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
