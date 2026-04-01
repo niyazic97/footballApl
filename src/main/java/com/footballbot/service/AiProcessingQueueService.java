@@ -18,9 +18,9 @@ public class AiProcessingQueueService {
     private final AiRankingService aiRankingService;
     private final NewsPublishQueueService newsPublishQueueService;
 
-    // Groq free tier: 6000 tokens/min per account, ~4000 tokens/request
-    // With 2 keys round-robin: each key gets 1 req/70s = ~3428 tokens/min — safe margin
-    private static final int GROQ_GAP_SECONDS = 35;
+    // Groq free tier: 12000 tokens/min per account, ~4000 tokens/request
+    // 90s gap: each key gets 1 req/180s = ~1333 tokens/min — safe even after restarts
+    private static final int GROQ_GAP_SECONDS = 90;
 
     private final LinkedBlockingQueue<NewsItem> queue = new LinkedBlockingQueue<>();
 
@@ -56,13 +56,17 @@ public class AiProcessingQueueService {
                     item.setFinalScore(aiRankingService.getFinalScore(item));
                     newsPublishQueueService.enqueue(item);
                     log.info("AI done, enqueued for publish: '{}'", item.getTitleRu());
+                } else if (Boolean.TRUE.equals(item.getRateLimited())) {
+                    // Groq rate limited — re-queue and wait 60s for cooldown
+                    log.warn("Groq rate limited for '{}' — cooling down 60s, re-queuing", item.getTitleEn());
+                    item.setRateLimited(null);
+                    TimeUnit.SECONDS.sleep(60);
+                    queue.offer(item);
                 } else {
                     log.warn("AI failed for '{}' — dropped", item.getTitleEn());
                 }
 
-                if (!queue.isEmpty()) {
-                    TimeUnit.SECONDS.sleep(GROQ_GAP_SECONDS);
-                }
+                TimeUnit.SECONDS.sleep(GROQ_GAP_SECONDS);
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

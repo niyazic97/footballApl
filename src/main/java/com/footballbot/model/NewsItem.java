@@ -23,6 +23,7 @@ public class NewsItem {
     private String fullTextEn;
     private int importanceScore;
     private int aiInterestScore;    // Level 2 AI score (1-10)
+    private Boolean rateLimited;    // true if last Groq call got 429
     private int finalScore;         // Combined score for sorting
     private String interestReason;  // AI explanation (for logs)
     private String league;

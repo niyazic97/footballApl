@@ -104,8 +104,8 @@ public class AiProcessorService {
 
         try (var response = httpClient.newCall(request).execute()) {
             if (response.code() == 429) {
-                log.warn("Groq rate limited for '{}' — will retry via queue", item.getTitleEn());
                 item.setTitleRu(null);
+                item.setRateLimited(true);
                 return item;
             }
             return parseGroqResponse(item, response.body().string());
