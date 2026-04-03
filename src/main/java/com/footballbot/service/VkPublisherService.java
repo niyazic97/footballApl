@@ -4,13 +4,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.footballbot.model.NewsItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -20,6 +24,7 @@ public class VkPublisherService {
 
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final ImageFinderService imageFinderService;
 
     @Value("${vk.access.token:}")
     private String accessToken;
@@ -37,13 +42,79 @@ public class VkPublisherService {
     public boolean publishNews(NewsItem item) {
         if (!isEnabled()) return false;
         try {
-            postToWall(buildText(item), null);
-            log.info("Published to VK: {}", item.getTitleRu());
+            String attachment = null;
+            byte[] imageBytes = imageFinderService.findImageBytes(item);
+            if (imageBytes != null) {
+                attachment = uploadDocAttachment(imageBytes, item.getTitleRu());
+            }
+            postToWall(buildText(item), attachment);
+            log.info("Published to VK{}: {}", attachment != null ? " (with image)" : "", item.getTitleRu());
             return true;
         } catch (Exception e) {
             log.warn("Failed to publish to VK '{}': {}", item.getTitleRu(), e.getMessage());
             return false;
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String uploadDocAttachment(byte[] imageBytes, String title) throws Exception {
+        // Step 1: get upload URL
+        String serverUrl = VK_API + "docs.getWallUploadServer"
+                + "?group_id=" + groupId
+                + "&access_token=" + accessToken
+                + "&v=" + VK_VERSION;
+        var serverResp = objectMapper.readValue(get(serverUrl), Map.class);
+        if (serverResp.containsKey("error")) {
+            log.warn("VK docs upload server error: {}", serverResp.get("error"));
+            return null;
+        }
+        String uploadUrl = (String) ((Map<?, ?>) serverResp.get("response")).get("upload_url");
+
+        // Step 2: upload image as multipart
+        var body = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("file", "image.jpg",
+                        RequestBody.create(imageBytes, MediaType.parse("image/jpeg")))
+                .build();
+        var uploadReq = new Request.Builder().url(uploadUrl).post(body).build();
+        String uploadRespStr;
+        try (var resp = httpClient.newCall(uploadReq).execute()) {
+            var rb = resp.body();
+            uploadRespStr = rb != null ? rb.string() : "{}";
+        }
+        var uploadResp = objectMapper.readValue(uploadRespStr, Map.class);
+        String fileToken = (String) uploadResp.get("file");
+        if (fileToken == null || fileToken.isBlank()) {
+            log.warn("VK doc upload returned no file token");
+            return null;
+        }
+
+        // Step 3: save document
+        String saveUrl = VK_API + "docs.save"
+                + "?file=" + URLEncoder.encode(fileToken, StandardCharsets.UTF_8)
+                + "&title=" + URLEncoder.encode(title != null ? title : "image", StandardCharsets.UTF_8)
+                + "&access_token=" + accessToken
+                + "&v=" + VK_VERSION;
+        var saveResp = objectMapper.readValue(get(saveUrl), Map.class);
+        if (saveResp.containsKey("error")) {
+            log.warn("VK docs.save error: {}", saveResp.get("error"));
+            return null;
+        }
+        var responseObj = (Map<?, ?>) saveResp.get("response");
+        // docs.save returns {type: "doc", doc: {id, owner_id, ...}}
+        var doc = (Map<?, ?>) responseObj.get("doc");
+        if (doc == null) {
+            // fallback: might be a list
+            var list = (List<?>) responseObj.get("doc");
+            if (list != null && !list.isEmpty()) doc = (Map<?, ?>) list.get(0);
+        }
+        if (doc == null) {
+            log.warn("VK docs.save returned unexpected structure: {}", saveResp);
+            return null;
+        }
+        int ownerId = ((Number) doc.get("owner_id")).intValue();
+        int docId = ((Number) doc.get("id")).intValue();
+        return "doc" + ownerId + "_" + docId;
     }
 
     private String buildText(NewsItem item) {
@@ -63,11 +134,6 @@ public class VkPublisherService {
         // Direct quote
         if (item.getQuote() != null && !item.getQuote().isBlank()) {
             sb.append("💬 ").append(item.getQuote()).append("\n\n");
-        }
-
-        // AI commentary
-        if (item.getAiCommentary() != null && !item.getAiCommentary().isBlank()) {
-            sb.append("💭 ").append(item.getAiCommentary()).append("\n\n");
         }
 
         // Separator + hashtags + source
