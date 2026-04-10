@@ -160,7 +160,7 @@ public class AiProcessorService {
         var body = Map.of(
                 "model", groqProperties.getModel(),
                 "temperature", 0.7,
-                "max_tokens", 2500,
+                "max_tokens", 700,
                 "messages", List.of(
                         Map.of("role", "system", "content", SYSTEM_PROMPT),
                         Map.of("role", "user", "content", buildUserPrompt(item, textForAi, usingFullText))

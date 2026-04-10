@@ -26,6 +26,7 @@ public class BotCommandService {
     private final PublishedNewsRepository publishedNewsRepository;
     private final PlayerRosterService playerRosterService;
     private final ScorerUtil scorerUtil;
+    private final StandingsImageService standingsImageService;
 
     @Value("${admin.telegram.user.id:}")
     private String adminUserId;
@@ -35,12 +36,14 @@ public class BotCommandService {
             HealthMonitorService healthMonitorService,
             PublishedNewsRepository publishedNewsRepository,
             PlayerRosterService playerRosterService,
-            ScorerUtil scorerUtil) {
+            ScorerUtil scorerUtil,
+            StandingsImageService standingsImageService) {
         this.newsPublishQueueService = newsPublishQueueService;
         this.healthMonitorService = healthMonitorService;
         this.publishedNewsRepository = publishedNewsRepository;
         this.playerRosterService = playerRosterService;
         this.scorerUtil = scorerUtil;
+        this.standingsImageService = standingsImageService;
     }
 
     public boolean isAdmin(String userId) {
@@ -64,8 +67,15 @@ public class BotCommandService {
                 scorerUtil.refreshCache();
                 yield "✅ Ростеры обновлены: " + scorerUtil.getCacheSize() + " игроков загружено";
             }
+            case "/standings" -> {
+                new Thread(() -> {
+                    standingsImageService.postStandings();
+                    standingsImageService.postScorers();
+                }, "manual-standings").start();
+                yield "📊 Публикую таблицу и бомбардиров...";
+            }
             case "/logs" -> buildLogsMessage();
-            default -> "❓ Неизвестная команда. Доступные: /status, /pause, /resume, /queue, /refreshrosters, /logs";
+            default -> "❓ Неизвестная команда. Доступные: /status, /pause, /resume, /queue, /refreshrosters, /standings, /logs";
         };
     }
 

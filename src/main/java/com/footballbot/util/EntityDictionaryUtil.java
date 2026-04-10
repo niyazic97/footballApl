@@ -32,6 +32,7 @@ public class EntityDictionaryUtil {
         DICT.put("west ham united", "Вест Хэм");
         DICT.put("west ham", "Вест Хэм");
         DICT.put("brighton", "Брайтон");
+        DICT.put("brighton hove", "Брайтон");
         DICT.put("everton", "Эвертон");
         DICT.put("brentford", "Брентфорд");
         DICT.put("fulham", "Фулэм");
@@ -39,11 +40,17 @@ public class EntityDictionaryUtil {
         DICT.put("wolves", "Вулверхэмптон");
         DICT.put("crystal palace", "Кристал Пэлас");
         DICT.put("nottingham forest", "Ноттингем Форест");
+        DICT.put("nottingham", "Ноттингем Форест");
         DICT.put("bournemouth", "Борнмут");
         DICT.put("leicester city", "Лестер");
         DICT.put("leicester", "Лестер");
+        DICT.put("ipswich town", "Ипсвич");
         DICT.put("ipswich", "Ипсвич");
         DICT.put("southampton", "Саутгемптон");
+        DICT.put("sunderland", "Сандерленд");
+        DICT.put("leeds united", "Лидс");
+        DICT.put("leeds", "Лидс");
+        DICT.put("burnley", "Бернли");
 
         // === UCL CLUBS ===
         DICT.put("real madrid", "Реал Мадрид");
@@ -142,6 +149,14 @@ public class EntityDictionaryUtil {
         DICT.put("hat-trick", "хет-трик");
         DICT.put("clean sheet", "сухой матч");
         DICT.put("own goal", "автогол");
+    }
+
+    /**
+     * Exact lookup by lowercase key. Returns the Russian translation if found.
+     */
+    public static java.util.Optional<String> translate(String key) {
+        if (key == null || key.isBlank()) return java.util.Optional.empty();
+        return java.util.Optional.ofNullable(DICT.get(key.toLowerCase().trim()));
     }
 
     /**

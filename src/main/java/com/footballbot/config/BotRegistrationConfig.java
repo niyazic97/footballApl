@@ -39,6 +39,7 @@ public class BotRegistrationConfig {
                     new BotCommand("queue", "Размер очереди публикаций"),
                     new BotCommand("pause", "Приостановить публикацию"),
                     new BotCommand("resume", "Возобновить публикацию"),
+                    new BotCommand("standings", "Таблица и бомбардиры АПЛ"),
                     new BotCommand("logs", "Последние 5 строк логов"),
                     new BotCommand("refreshrosters", "Обновить ростеры игроков")
             ), null, null));

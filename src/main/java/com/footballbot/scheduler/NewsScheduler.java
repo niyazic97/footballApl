@@ -16,6 +16,7 @@ import com.footballbot.service.PreMatchAnalysisService;
 import com.footballbot.service.RssParserService;
 import com.footballbot.service.TelegramPublisherService;
 import com.footballbot.service.PlayerRosterService;
+import com.footballbot.service.StandingsImageService;
 import com.footballbot.service.WeeklyRoundupService;
 import com.footballbot.util.RelevanceFilterUtil;
 import com.footballbot.util.ScorerUtil;
@@ -48,6 +49,7 @@ public class NewsScheduler {
     private final MatchScheduleService matchScheduleService;
     private final PreMatchAnalysisService preMatchAnalysisService;
     private final WeeklyRoundupService weeklyRoundupService;
+    private final StandingsImageService standingsImageService;
     private final MatchResultService matchResultService;
     private final PostMatchStatsService postMatchStatsService;
     private final HealthMonitorService healthMonitorService;
@@ -71,16 +73,16 @@ public class NewsScheduler {
         log.info("Total fetched: {}", allNews.size());
         allNews.forEach(item -> log.info("  [score={}] {}", scorerUtil.score(item), item.getTitleEn()));
 
-        // Step 1.5: if bot was down for 8+ hours, skip news older than 1 hour
-        boolean longDowntime = !publishedNewsRepository.existsByPostedAtAfter(
-                LocalDateTime.now(ZoneId.of("Europe/Moscow")).minusHours(8));
-        if (longDowntime) {
-            var cutoff = LocalDateTime.now(ZoneId.of("Europe/Moscow")).minusHours(1);
+        // Step 1.5: if last post was more than 1 hour ago, skip news older than 1 hour
+        var lastPost = publishedNewsRepository.findTopByOrderByPostedAtDesc();
+        var oneHourAgo = LocalDateTime.now(ZoneId.of("Europe/Moscow")).minusHours(1);
+        boolean downtime = lastPost.isEmpty() || lastPost.get().getPostedAt().isBefore(oneHourAgo);
+        if (downtime) {
             int before = allNews.size();
             allNews = allNews.stream()
-                    .filter(item -> item.getPublishedAt() != null && item.getPublishedAt().isAfter(cutoff))
+                    .filter(item -> item.getPublishedAt() != null && item.getPublishedAt().isAfter(oneHourAgo))
                     .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
-            log.info("Long downtime detected — skipped {} stale items (older than 1h)", before - allNews.size());
+            log.info("Downtime detected — skipped {} stale items (older than 1h)", before - allNews.size());
         }
 
         // Step 2: filter already published
@@ -111,11 +113,15 @@ public class NewsScheduler {
 
         log.info("After all filters: {} items remaining from {} fetched", candidates.size(), allNews.size());
 
-        // Step 6: sort by L1 score and add to AI processing queue
+        // Step 6: sort by L1 score, cap per run, and add to AI processing queue
         // AI processing happens in a separate thread respecting Groq rate limits
         candidates.sort((a, b) -> Integer.compare(b.getImportanceScore(), a.getImportanceScore()));
-        candidates.forEach(aiProcessingQueueService::enqueue);
-        log.info("Added {} candidates to AI queue (AI queue size: {})", candidates.size(), aiProcessingQueueService.queueSize());
+        var toEnqueue = candidates.stream().limit(maxPostsPerRun).toList();
+        if (candidates.size() > maxPostsPerRun) {
+            log.info("Capped candidates from {} to {} (maxPostsPerRun={})", candidates.size(), toEnqueue.size(), maxPostsPerRun);
+        }
+        toEnqueue.forEach(aiProcessingQueueService::enqueue);
+        log.info("Added {} candidates to AI queue (AI queue size: {})", toEnqueue.size(), aiProcessingQueueService.queueSize());
     }
 
     // JOB 2 — Daily match cache refresh at 08:50 MSK (before schedule post)
@@ -171,11 +177,18 @@ public class NewsScheduler {
         }
     }
 
-    // JOB 5 — Weekly roundup every Monday 10:00 MSK
+    // JOB 5a — Weekly standings image every Monday 10:00 MSK
     @Scheduled(cron = "0 0 10 * * MON", zone = "Europe/Moscow")
-    public void runWeeklyRoundupJob() {
-        log.info("Starting weekly roundup job...");
-        weeklyRoundupService.postRoundup();
+    public void runWeeklyStandingsJob() {
+        log.info("Starting weekly standings image job...");
+        standingsImageService.postStandings();
+    }
+
+    // JOB 5b — Weekly scorers/assists image every Monday 10:10 MSK
+    @Scheduled(cron = "0 10 10 * * MON", zone = "Europe/Moscow")
+    public void runWeeklyScorersJob() {
+        log.info("Starting weekly scorers image job...");
+        standingsImageService.postScorers();
     }
 
     // JOB 6 — Live goals queue flush (every 5 minutes during active hours)

@@ -66,8 +66,14 @@ public class ScorerUtil {
         }
 
         // Other football (+2)
-        if (containsAny(title, List.of("record", "history", "first ever", "preview", "press conference", "interview"))) {
+        if (containsAny(title, List.of("record", "history", "first ever"))) {
             score += 2;
+        }
+
+        // Low-value content (-3)
+        if (containsAny(title, List.of("press conference", "preview", "interview", "face the press",
+                "faces the press", "pre-match", "ahead of"))) {
+            score -= 3;
         }
 
         // Awards (+5)

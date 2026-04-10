@@ -116,8 +116,7 @@ public class WeeklyRoundupService {
             }
         }
 
-        sb.append("\n#апл #Таблица #Итоги");
-        return sb.toString();
+        return sb.toString().trim();
     }
 
     private String pointsWord(int pts) {

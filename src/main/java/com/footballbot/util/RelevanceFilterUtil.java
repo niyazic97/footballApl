@@ -39,12 +39,13 @@ public class RelevanceFilterUtil {
 
     private static final Set<String> BLOCKED_COMPETITIONS = Set.of(
             "la liga", "serie a", "bundesliga", "ligue 1", "eredivisie",
-            "mls", "saudi", "pro league", "turkish", "scottish",
+            "mls", "saudi", "pro league", "turkish", "scottish", "premiership",
             "soccer tournament", "the soccer tournament", "tsc",
             "copa del rey", "dfb pokal", "coupe de france",
             "atletico", "real madrid", "barcelona", "psg", "juventus",
             "bayern", "dortmund", "milan", "inter", "roma", "napoli",
-            "benfica", "porto", "ajax", "sevilla", "valencia"
+            "benfica", "porto", "ajax", "sevilla", "valencia",
+            "celtic", "rangers", "dundee", "hibernian", "aberdeen"
     );
 
     private static final List<String> NON_FOOTBALL_TERMS = List.of(
@@ -52,12 +53,15 @@ public class RelevanceFilterUtil {
             "tennis", "golf", "tsc", "sneaky fc",
             // Quizzes and trivia
             "can you name", "name every", "name all", "how many can you", "quiz",
-            "test yourself", "trivia", "wordle", "flashscore quiz"
+            "test yourself", "trivia", "wordle", "flashscore quiz",
+            // Press conferences and previews — not real news
+            "press conference", "face the press", "faces the press", "facing the press",
+            "pre-match press", "press ahead of", "ahead of the press"
     );
 
     private static final List<String> FOOTBALL_SIGNALS = List.of(
-            "premier league", "epl", "champions league", "transfer",
-            "goal", "match", "manager", "squad"
+            "premier league", "epl", "champions league", "europa league",
+            "transfer", "fa cup", "carabao cup"
     );
 
     public static boolean isRelevant(NewsItem item) {

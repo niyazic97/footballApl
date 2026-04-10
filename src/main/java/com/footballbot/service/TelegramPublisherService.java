@@ -65,6 +65,19 @@ public class TelegramPublisherService extends TelegramLongPollingBot {
         }
     }
 
+    public void sendPhotoBytes(byte[] imageBytes, String caption) {
+        try {
+            var sendPhoto = new SendPhoto();
+            sendPhoto.setChatId(channelId);
+            sendPhoto.setPhoto(new InputFile(new java.io.ByteArrayInputStream(imageBytes), "image.png"));
+            sendPhoto.setCaption(caption);
+            execute(sendPhoto);
+            log.info("Photo sent: {}", caption);
+        } catch (TelegramApiException e) {
+            log.error("Failed to send photo to Telegram: {}", e.getMessage());
+        }
+    }
+
     public void sendTextMessage(String text) {
         try {
             var message = new SendMessage();

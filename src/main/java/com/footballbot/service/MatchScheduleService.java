@@ -2,6 +2,7 @@ package com.footballbot.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.footballbot.model.MatchDay;
+import com.footballbot.util.EntityDictionaryUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
@@ -34,44 +35,6 @@ public class MatchScheduleService {
 
     private static final List<Integer> LEAGUE_IDS = List.of(2021, 2001); // EPL, UCL
 
-    private static final Map<String, String> TEAM_NAMES_RU = Map.ofEntries(
-            Map.entry("Arsenal FC", "Арсенал"),
-            Map.entry("Arsenal", "Арсенал"),
-            Map.entry("Chelsea FC", "Челси"),
-            Map.entry("Chelsea", "Челси"),
-            Map.entry("Liverpool FC", "Ливерпуль"),
-            Map.entry("Liverpool", "Ливерпуль"),
-            Map.entry("Manchester City FC", "Манчестер Сити"),
-            Map.entry("Man City", "Манчестер Сити"),
-            Map.entry("Manchester United FC", "Манчестер Юнайтед"),
-            Map.entry("Man United", "Манчестер Юнайтед"),
-            Map.entry("Tottenham Hotspur FC", "Тоттенхэм"),
-            Map.entry("Tottenham", "Тоттенхэм"),
-            Map.entry("Newcastle United FC", "Ньюкасл"),
-            Map.entry("Newcastle", "Ньюкасл"),
-            Map.entry("Aston Villa FC", "Астон Вилла"),
-            Map.entry("Aston Villa", "Астон Вилла"),
-            Map.entry("West Ham United FC", "Вест Хэм"),
-            Map.entry("Brighton & Hove Albion FC", "Брайтон"),
-            Map.entry("Everton FC", "Эвертон"),
-            Map.entry("Real Madrid CF", "Реал Мадрид"),
-            Map.entry("Real Madrid", "Реал Мадрид"),
-            Map.entry("FC Barcelona", "Барселона"),
-            Map.entry("Barcelona", "Барселона"),
-            Map.entry("FC Bayern München", "Бавария"),
-            Map.entry("Bayern Munich", "Бавария"),
-            Map.entry("Paris Saint-Germain FC", "ПСЖ"),
-            Map.entry("PSG", "ПСЖ"),
-            Map.entry("Juventus FC", "Ювентус"),
-            Map.entry("AC Milan", "Милан"),
-            Map.entry("Inter Milan", "Интер"),
-            Map.entry("FC Internazionale Milano", "Интер"),
-            Map.entry("Club Atlético de Madrid", "Атлетико"),
-            Map.entry("Borussia Dortmund", "Боруссия Д"),
-            Map.entry("FC Porto", "Порту"),
-            Map.entry("SL Benfica", "Бенфика"),
-            Map.entry("AFC Ajax", "Аякс")
-    );
 
     public void postSchedule() {
         var matches = matchCacheService.getTodayMatches();
@@ -171,12 +134,11 @@ public class MatchScheduleService {
             sb.append("\n");
         }
 
-        sb.append("#АПЛ #ЛигаЧемпионов #Расписание");
-        return sb.toString();
+        return sb.toString().trim();
     }
 
     public String translateTeam(String name) {
         if (name == null) return "Unknown";
-        return TEAM_NAMES_RU.getOrDefault(name, name);
+        return EntityDictionaryUtil.translate(name).orElse(name);
     }
 }
