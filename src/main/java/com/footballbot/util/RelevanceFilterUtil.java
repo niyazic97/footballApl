@@ -3,9 +3,9 @@ package com.footballbot.util;
 import com.footballbot.model.NewsItem;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Slf4j
 public class RelevanceFilterUtil {
@@ -54,9 +54,29 @@ public class RelevanceFilterUtil {
             // Quizzes and trivia
             "can you name", "name every", "name all", "how many can you", "quiz",
             "test yourself", "trivia", "wordle", "flashscore quiz",
-            // Press conferences and previews — not real news
+            // Press conferences
             "press conference", "face the press", "faces the press", "facing the press",
             "pre-match press", "press ahead of", "ahead of the press"
+    );
+
+    // Structural patterns for match-preview / live-blog articles.
+    // We generate our own pre-match posts — external previews duplicate them.
+    //
+    // Pattern A: title ends with " LIVE", " LIVE:" or " LIVE!" (live blog)
+    // Pattern B: two EPL clubs in title + at least one match-context word
+    // Pattern C: explicit line-up / TV-guide fragments regardless of clubs
+    // Matches "LIVE:" or "LIVE!" anywhere, or "LIVE" at end of title
+    private static final Pattern LIVE_BLOG_PATTERN =
+            Pattern.compile("\\bLIVE[!:]|\\bLIVE\\s*$", Pattern.CASE_INSENSITIVE);
+
+    private static final List<String> MATCH_CONTEXT_WORDS = List.of(
+            "line-up", "lineup", "line up",
+            "predicted xi", "confirmed xi", "starting xi",
+            "how to watch", "where to watch", "on tv", "tv channel",
+            "live stream", "live score", "live blog",
+            "kick-off time", "kickoff", "kick off time",
+            "match preview", "preview", "prediction",
+            "team news", "live update"
     );
 
     private static final List<String> FOOTBALL_SIGNALS = List.of(
@@ -97,6 +117,12 @@ public class RelevanceFilterUtil {
             }
         }
 
+        // RULE 3b — Match preview / live blog detection (structural, not keyword list)
+        if (isMatchPreviewOrLiveBlog(item)) {
+            log.info("FILTERED match preview/live blog: {}", item.getTitleEn());
+            return false;
+        }
+
         boolean hasEplClub = EPL_CLUBS.stream().anyMatch(text::contains);
         boolean hasBlockedTerm = BLOCKED_COMPETITIONS.stream().anyMatch(text::contains);
 
@@ -115,5 +141,35 @@ public class RelevanceFilterUtil {
 
         log.info("PASSED filter: [{}] {}", item.getUrl(), item.getTitleEn());
         return true;
+    }
+
+    /**
+     * Detects match-preview and live-blog articles using structural logic.
+     * <p>
+     * Case A — title ends with LIVE / LIVE: / LIVE! → always a live blog:
+     * "Arsenal v Bournemouth LIVE: Lewis-Skelly starts",
+     * "No Saka but Eze returns for Arsenal vs Bournemouth LIVE!"
+     * <p>
+     * Case B — two EPL clubs in title + at least one match-context word:
+     * "Liverpool line-ups for Fulham as Salah decision made",
+     * "Is Brentford vs Everton on TV? Channel and live stream"
+     * <p>
+     * Real news with two clubs ("Arsenal beat Chelsea 3-0") won't have
+     * match-context words so they pass through correctly.
+     */
+    private static boolean isMatchPreviewOrLiveBlog(NewsItem item) {
+        String title = item.getTitleEn() != null ? item.getTitleEn() : "";
+
+        // Case A: ends with LIVE (case-insensitive)
+        if (LIVE_BLOG_PATTERN.matcher(title).find()) return true;
+
+        // Case B: two EPL clubs + match-context word
+        String titleLower = title.toLowerCase();
+        long clubCount = EPL_CLUBS.stream().filter(titleLower::contains).count();
+        if (clubCount >= 2) {
+            return MATCH_CONTEXT_WORDS.stream().anyMatch(titleLower::contains);
+        }
+
+        return false;
     }
 }

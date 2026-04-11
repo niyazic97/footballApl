@@ -1,16 +1,13 @@
 package com.footballbot.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.footballbot.config.GroqProperties;
 import com.footballbot.model.MatchDay;
 import com.footballbot.model.PublishedResult;
 import com.footballbot.repository.PublishedResultRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import okhttp3.RequestBody;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -29,8 +26,6 @@ public class MatchResultService {
     private final TelegramPublisherService telegramPublisherService;
     private final PublishedResultRepository publishedResultRepository;
     private final MatchScheduleService matchScheduleService;
-    private final GroqRateLimiter groqRateLimiter;
-    private final GroqProperties groqProperties;
     private final BetService betService;
     private final VkPublisherService vkPublisherService;
 
@@ -53,24 +48,13 @@ public class MatchResultService {
 
             var score = (Map<String, Object>) details.get("score");
             var fullTime = (Map<String, Object>) score.get("fullTime");
-            var halfTime = (Map<String, Object>) score.get("halfTime");
 
             int homeScore = fullTime.get("home") instanceof Number n ? n.intValue() : 0;
             int awayScore = fullTime.get("away") instanceof Number n ? n.intValue() : 0;
-            int htHome = halfTime.get("home") instanceof Number n ? n.intValue() : 0;
-            int htAway = halfTime.get("away") instanceof Number n ? n.intValue() : 0;
 
             var goals = (List<Map<String, Object>>) details.getOrDefault("goals", List.of());
-            String scorersList = goals.stream()
-                    .map(g -> {
-                        var scorer = (Map<String, Object>) g.get("scorer");
-                        int minute = g.get("minute") instanceof Number n ? n.intValue() : 0;
-                        return (scorer != null ? scorer.get("name") : "Unknown") + " " + minute + "'";
-                    })
-                    .collect(Collectors.joining(", "));
 
-            var aiReaction = getAiReaction(match, homeScore, awayScore, htHome, htAway, scorersList);
-            var post = formatPost(match, homeScore, awayScore, htHome, htAway, goals, aiReaction);
+            var post = formatPost(match, homeScore, awayScore, goals);
 
             telegramPublisherService.sendTextMessage(post);
             vkPublisherService.publishText(post);
@@ -105,62 +89,8 @@ public class MatchResultService {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, String> getAiReaction(MatchDay match, int homeScore, int awayScore,
-                                               int htHome, int htAway, String scorersList) {
-        try {
-            String prompt = String.format("""
-                    You are an emotional football commentator for a Russian Telegram channel.
-                    A match just finished. Respond ONLY with valid JSON:
-                    {
-                      "reaction": "2-3 emotional sentences reacting to the result in Russian",
-                      "match_summary": "1-2 sentences describing how the match went in Russian",
-                      "star_of_match": "name of best player and why in Russian"
-                    }
-                    Match: %s %d:%d %s
-                    Half-time: %d:%d
-                    Scorers: %s""",
-                    match.getHomeTeam(), homeScore, awayScore, match.getAwayTeam(),
-                    htHome, htAway, scorersList.isBlank() ? "no goals" : scorersList);
-
-            var body = objectMapper.writeValueAsString(Map.of(
-                    "model", groqProperties.getModel(),
-                    "messages", List.of(Map.of("role", "user", "content", prompt))
-            ));
-
-            var httpRequest = new Request.Builder()
-                    .url(groqProperties.getApi().getUrl())
-                    .header("Authorization", "Bearer " + groqProperties.getApi().getKey())
-                    .post(RequestBody.create(body, MediaType.get("application/json")))
-                    .build();
-
-            String responseJson = groqRateLimiter.submit(
-                    "match-result:" + match.getHomeTeam() + "vs" + match.getAwayTeam(),
-                    () -> {
-                        try (var response = httpClient.newCall(httpRequest).execute()) {
-                            var rb = response.body();
-                            return rb != null ? rb.string() : "";
-                        }
-                    }
-            ).get();
-
-            var root = objectMapper.readValue(responseJson, Map.class);
-            var choices = (List<Map<String, Object>>) root.get("choices");
-            if (choices == null || choices.isEmpty()) return Map.of();
-            var message = (Map<String, Object>) choices.get(0).get("message");
-            var text = (String) message.get("content");
-            text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
-            return objectMapper.readValue(text, Map.class);
-        } catch (Exception e) {
-            log.warn("AI reaction failed: {}", e.getMessage());
-            return Map.of();
-        }
-    }
-
-    @SuppressWarnings("unchecked")
     private String formatPost(MatchDay match, int homeScore, int awayScore,
-                               int htHome, int htAway,
-                               List<Map<String, Object>> goals,
-                               Map<String, String> aiReaction) {
+                               List<Map<String, Object>> goals) {
         String homeRu = matchScheduleService.translateTeam(match.getHomeTeam());
         String awayRu = matchScheduleService.translateTeam(match.getAwayTeam());
 

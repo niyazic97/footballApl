@@ -47,7 +47,7 @@ public class MatchdayStandingsService {
         long total = todayMatches.size();
         long finished = todayMatches.stream().filter(m -> "FINISHED".equals(m.getStatus())).count();
 
-        if (finished < total || finished == 0) return; // not all done yet
+        if (finished < total) return; // not all done yet
 
         log.info("All {} matches finished — posting standings", total);
         postStandings();

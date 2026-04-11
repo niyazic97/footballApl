@@ -72,6 +72,7 @@ public class WeeklyRoundupService {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private String formatPost(List<Map<String, Object>> table, List<Map<String, Object>> scorers) {
         var sb = new StringBuilder();
         sb.append("📊 Итоги недели — АПЛ\n\n");

@@ -8,6 +8,7 @@ import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -35,15 +36,16 @@ public class DeduplicationService {
     );
 
     public List<NewsItem> filterDuplicates(List<NewsItem> items) {
+        var now = LocalDateTime.now(ZoneId.of("Europe/Moscow"));
         var allRecentTitles = publishedNewsRepository
-                .findByPostedAtAfter(LocalDateTime.now().minusHours(6))
+                .findByPostedAtAfter(now.minusHours(6))
                 .stream()
                 .map(p -> normalize(p.getTitle()))
                 .toList();
 
         // For entity-based deduplication use a shorter window (2h) to avoid over-blocking
         var entityWindowTitles = publishedNewsRepository
-                .findByPostedAtAfter(LocalDateTime.now().minusHours(2))
+                .findByPostedAtAfter(now.minusHours(2))
                 .stream()
                 .map(p -> normalize(p.getTitle()))
                 .toList();

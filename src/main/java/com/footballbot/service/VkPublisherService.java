@@ -35,12 +35,12 @@ public class VkPublisherService {
     private static final String VK_API = "https://api.vk.com/method/";
     private static final String VK_VERSION = "5.131";
 
-    public boolean isEnabled() {
-        return accessToken != null && !accessToken.isBlank() && groupId > 0;
+    public boolean isDisabled() {
+        return accessToken == null || accessToken.isBlank() || groupId <= 0;
     }
 
     public void publishText(String text) {
-        if (!isEnabled()) return;
+        if (isDisabled()) return;
         try {
             postToWall(text, null);
             log.info("Published text to VK ({} chars)", text.length());
@@ -50,7 +50,7 @@ public class VkPublisherService {
     }
 
     public boolean publishNews(NewsItem item) {
-        if (!isEnabled()) return false;
+        if (isDisabled()) return false;
         try {
             String attachment = null;
             byte[] imageBytes = imageFinderService.findImageBytes(item);
@@ -66,7 +66,6 @@ public class VkPublisherService {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private String uploadDocAttachment(byte[] imageBytes, String title) throws Exception {
         // Step 1: get upload URL
         String serverUrl = VK_API + "docs.getWallUploadServer"
@@ -182,7 +181,6 @@ public class VkPublisherService {
         return false;
     }
 
-    @SuppressWarnings("unchecked")
     private void postToWall(String text, String attachment) throws Exception {
         String url = VK_API + "wall.post?owner_id=-" + groupId
                 + "&from_group=1"

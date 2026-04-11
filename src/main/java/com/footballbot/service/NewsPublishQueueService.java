@@ -25,7 +25,7 @@ public class NewsPublishQueueService {
     private final HealthMonitorService healthMonitorService;
 
     @Value("${publish.delay.seconds:180}")
-    private int delayBetweenPostsSeconds = 180;
+    private final int delayBetweenPostsSeconds = 180;
 
     private final LinkedBlockingQueue<NewsItem> queue = new LinkedBlockingQueue<>();
     private volatile boolean paused = false;

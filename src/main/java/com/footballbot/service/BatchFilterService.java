@@ -2,6 +2,7 @@ package com.footballbot.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.footballbot.model.NewsItem;
+import com.footballbot.model.PublishedNews;
 import com.footballbot.repository.PublishedNewsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +18,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Future;
 
 @Service
 @Slf4j
@@ -26,14 +28,18 @@ public class BatchFilterService {
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final PublishedNewsRepository publishedNewsRepository;
+    private final GroqRateLimiter groqRateLimiter;
 
     @Value("${groq.api.key}")
+    @SuppressWarnings("unused") // injected by Spring @Value
     private String apiKey;
 
     @Value("${groq.api.url}")
+    @SuppressWarnings("unused")
     private String apiUrl;
 
     @Value("${groq.model}")
+    @SuppressWarnings("unused")
     private String model;
 
     /**
@@ -46,7 +52,7 @@ public class BatchFilterService {
         var recentTitles = publishedNewsRepository
                 .findByPostedAtAfter(LocalDateTime.now(ZoneId.of("Europe/Moscow")).minusHours(6))
                 .stream()
-                .map(p -> p.getTitle())
+                .map(PublishedNews::getTitle)
                 .toList();
 
         try {
@@ -57,7 +63,6 @@ public class BatchFilterService {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private List<NewsItem> callGroq(List<NewsItem> candidates, List<String> recentTitles) throws Exception {
         var prompt = buildPrompt(candidates, recentTitles);
 
@@ -74,13 +79,18 @@ public class BatchFilterService {
                 .post(RequestBody.create(requestBody, MediaType.get("application/json")))
                 .build();
 
-        String responseJson;
-        try (var response = httpClient.newCall(request).execute()) {
-            if (response.code() == 429) {
-                log.warn("Batch filter rate limited — passing all candidates through");
-                return candidates;
+        Future<String> future = groqRateLimiter.submit("batch-filter", () -> {
+            try (var response = httpClient.newCall(request).execute()) {
+                if (response.code() == 429) return "__RATE_LIMITED__";
+                var body = response.body();
+                return body != null ? body.string() : "";
             }
-            responseJson = response.body().string();
+        });
+
+        String responseJson = future.get();
+        if ("__RATE_LIMITED__".equals(responseJson)) {
+            log.warn("Batch filter rate limited — passing all candidates through");
+            return candidates;
         }
 
         return parseResponse(candidates, responseJson);

@@ -111,20 +111,20 @@ public class MatchCacheService {
         }
     }
 
-    public boolean isActiveHours() {
+    public boolean isSilentHours() {
         var now = ZonedDateTime.now(MOSCOW).toLocalDateTime();
 
-        // Active if any match is within 60 min before kickoff OR up to 210 min after kickoff
+        // Silent if no match is within 60 min before kickoff OR up to 210 min after kickoff
         for (var match : todayMatches) {
             if (match.getKickoff() != null) {
                 long minutesUntil = java.time.temporal.ChronoUnit.MINUTES.between(now, match.getKickoff());
                 if (minutesUntil >= -210 && minutesUntil <= 60) {
-                    return true;
+                    return false;
                 }
             }
         }
 
-        return false;
+        return true;
     }
 
     public boolean hasMatchesNearKickoff() {

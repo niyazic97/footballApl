@@ -17,7 +17,7 @@ public class BetService {
     private final BetRecordRepository betRecordRepository;
 
     public void saveBet(String matchId, String homeTeam, String awayTeam, String bet, String confidence) {
-        boolean skip = bet.toLowerCase().contains("пропускаю");
+        boolean skip = bet != null && bet.toLowerCase().contains("пропускаю");
         betRecordRepository.save(BetRecord.builder()
                 .matchId(matchId)
                 .homeTeam(homeTeam)

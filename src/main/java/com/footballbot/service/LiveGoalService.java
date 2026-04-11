@@ -43,6 +43,7 @@ public class LiveGoalService {
     private final AtomicInteger goalPostsThisHour = new AtomicInteger(0);
     private ZonedDateTime hourWindowStart = ZonedDateTime.now(MOSCOW);
 
+    @SuppressWarnings("unchecked")
     public void checkAndFlushGoals() {
         if (apiKey == null || apiKey.isBlank()) return;
 

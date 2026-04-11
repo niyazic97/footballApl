@@ -105,7 +105,7 @@ public class PreMatchAnalysisService {
 
         var lineups = fetchLineups(match);
 
-        String prompt = buildPrompt(match, homeRu, awayRu, kickoffStr,
+        String prompt = buildPrompt(homeRu, awayRu, kickoffStr,
                 homeStanding, awayStanding,
                 homeForm, awayForm,
                 homeFatigue, awayFatigue,
@@ -381,7 +381,7 @@ public class PreMatchAnalysisService {
 
     // ── Groq ─────────────────────────────────────────────────────────────────
 
-    private String buildPrompt(MatchDay match, String homeRu, String awayRu, String kickoffStr,
+    private String buildPrompt(String homeRu, String awayRu, String kickoffStr,
                                 Map<String, Object> homeStanding, Map<String, Object> awayStanding,
                                 String homeForm, String awayForm,
                                 String homeFatigue, String awayFatigue,

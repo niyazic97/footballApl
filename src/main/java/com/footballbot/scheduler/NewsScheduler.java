@@ -154,7 +154,7 @@ public class NewsScheduler {
     // JOB 4 — Pre-match analysis + results monitor every 5 minutes
     @Scheduled(fixedDelay = 300000)
     public void runMatchMonitorJob() {
-        if (!matchCacheService.isActiveHours()) return;
+        if (matchCacheService.isSilentHours()) return;
 
         var matches = matchCacheService.getTodayMatches();
         var now = LocalDateTime.now(ZoneId.of("Europe/Moscow"));
@@ -201,7 +201,7 @@ public class NewsScheduler {
     // JOB 6 — Live goals queue flush (every 5 minutes during active hours)
     @Scheduled(fixedDelay = 300000)
     public void runLiveGoalsJob() {
-        if (!matchCacheService.isActiveHours()) return;
+        if (matchCacheService.isSilentHours()) return;
         liveGoalService.checkAndFlushGoals();
     }
 

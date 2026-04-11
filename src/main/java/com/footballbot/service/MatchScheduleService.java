@@ -15,7 +15,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -111,8 +110,8 @@ public class MatchScheduleService {
         var date = LocalDate.now().format(DateTimeFormatter.ofPattern("d MMMM", new Locale("ru")));
         sb.append("📅 Матчи сегодня — ").append(date).append("\n\n");
 
-        var epl = matches.stream().filter(m -> "EPL".equals(m.getLeague())).collect(Collectors.toList());
-        var ucl = matches.stream().filter(m -> "UCL".equals(m.getLeague())).collect(Collectors.toList());
+        var epl = matches.stream().filter(m -> "EPL".equals(m.getLeague())).toList();
+        var ucl = matches.stream().filter(m -> "UCL".equals(m.getLeague())).toList();
 
         if (!epl.isEmpty()) {
             sb.append("🏴󠁧󠁢󠁥󠁮󠁧󠁿 Премьер-лига:\n");

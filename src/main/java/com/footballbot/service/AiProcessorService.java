@@ -35,6 +35,7 @@ public class AiProcessorService {
     private final AtomicInteger currentKeyIndex = new AtomicInteger(0);
 
     @PostConstruct
+    @SuppressWarnings("unused") // called by Spring
     public void initKeys() {
         apiKeys = new ArrayList<>();
         // Key 2 is primary for content generation; Key 1 is used by BatchFilterService
@@ -93,12 +94,11 @@ public class AiProcessorService {
         var requestBody = buildRequestBody(item, textForAi, usingFullText);
 
         for (int attempt = 0; attempt < apiKeys.size(); attempt++) {
-            String key = attempt == 0 ? currentKey() : switchKey();
-            final String finalKey = key;
+            final String key = attempt == 0 ? currentKey() : switchKey();
 
             var httpRequest = new Request.Builder()
                     .url(groqProperties.getApi().getUrl())
-                    .header("Authorization", "Bearer " + finalKey)
+                    .header("Authorization", "Bearer " + key)
                     .post(RequestBody.create(requestBody, MediaType.get("application/json")))
                     .build();
 
@@ -170,7 +170,7 @@ public class AiProcessorService {
         var body = Map.of(
                 "model", groqProperties.getModel(),
                 "temperature", 0.7,
-                "max_tokens", 700,
+                "max_tokens", 500,
                 "messages", List.of(
                         Map.of("role", "system", "content", SYSTEM_PROMPT),
                         Map.of("role", "user", "content", buildUserPrompt(item, textForAi, usingFullText))
