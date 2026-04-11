@@ -96,8 +96,20 @@ public class NewsScheduler {
             log.info("Downtime detected — skipped {} stale items (older than 1h)", before - allNews.size());
         }
 
-        // Step 2: filter already published
-        var notPublished = allNews.stream()
+        // Step 2: keyword pre-filter (fast, no AI) — blocks obvious non-EPL content
+        var relevant = allNews.stream()
+                .filter(RelevanceFilterUtil::isRelevant)
+                .toList();
+        log.info("After keyword filter: {}/{}", relevant.size(), allNews.size());
+
+        // Step 2b: L1 score filter — blocks low-quality articles before hitting Groq
+        var scored = relevant.stream()
+                .filter(item -> scorerUtil.score(item) >= minScore)
+                .toList();
+        log.info("After score filter (>= {}): {}/{}", minScore, scored.size(), relevant.size());
+
+        // Step 2c: filter already published
+        var notPublished = scored.stream()
                 .filter(item -> !publishedNewsRepository.existsById(item.getId()))
                 .toList();
 
