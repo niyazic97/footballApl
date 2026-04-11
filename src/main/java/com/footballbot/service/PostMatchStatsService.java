@@ -214,13 +214,8 @@ public class PostMatchStatsService {
                 .max(Comparator.comparingDouble(PlayerStat::rating)).orElse(null);
         var topAway = players.stream().filter(p -> !p.isHome())
                 .max(Comparator.comparingDouble(PlayerStat::rating)).orElse(null);
-        var bestPasser = players.stream().filter(p -> p.keyPasses() > 0)
-                .max(Comparator.comparingInt(PlayerStat::keyPasses)).orElse(null);
 
         if (topHome == null || topAway == null) return null;
-
-        // Grok commentary
-        String commentary = getStatsCommentary(homeRu, awayRu, match);
 
         var sb = new StringBuilder();
         sb.append("📈 Статистика матча\n\n");
@@ -241,17 +236,6 @@ public class PostMatchStatsService {
                 .append(" | 👟 ").append(topAway.shots()).append(" удары")
                 .append(" | 🎯 ").append((int) topAway.passAcc()).append("% пасы\n");
 
-        if (bestPasser != null) {
-            sb.append("\n📊 Лучший пас:\n");
-            sb.append("🎯 ").append(bestPasser.name()).append(" — ")
-                    .append((int) bestPasser.passAcc()).append("% (").append(bestPasser.keyPasses()).append(" острых)\n");
-        }
-
-        if (commentary != null) sb.append("\n💬 ").append(commentary).append("\n");
-
-        String homeTag = "#" + homeRu.replace(" ", "_");
-        String awayTag = "#" + awayRu.replace(" ", "_");
-        sb.append("\n#Статистика ").append(homeTag).append(" ").append(awayTag).append(" #апл");
 
         return sb.toString();
     }

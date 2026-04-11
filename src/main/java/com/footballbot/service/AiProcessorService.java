@@ -32,24 +32,28 @@ public class AiProcessorService {
     private final GroqProperties groqProperties;
 
     private List<String> apiKeys;
-    private final AtomicInteger keyIndex = new AtomicInteger(0);
+    private final AtomicInteger currentKeyIndex = new AtomicInteger(0);
 
     @PostConstruct
     public void initKeys() {
         apiKeys = new ArrayList<>();
-        apiKeys.add(groqProperties.getApi().getKey());
+        // Key 2 is primary for content generation; Key 1 is used by BatchFilterService
         String key2 = groqProperties.getApi().getKey2();
         if (key2 != null && !key2.isBlank()) {
             apiKeys.add(key2);
         }
-        log.info("Groq: using {} API key(s), round-robin on every request", apiKeys.size());
+        apiKeys.add(groqProperties.getApi().getKey()); // fallback
+        log.info("Groq content generation: {} key(s), key2 primary", apiKeys.size());
     }
 
-    // Each call gets the next key in rotation — regardless of success or failure
-    private String nextKey() {
-        int idx = keyIndex.getAndIncrement() % apiKeys.size();
-        log.debug("Groq using key #{}", idx + 1);
-        return apiKeys.get(idx);
+    private String currentKey() {
+        return apiKeys.get(currentKeyIndex.get() % apiKeys.size());
+    }
+
+    private String switchKey() {
+        int next = (currentKeyIndex.incrementAndGet()) % apiKeys.size();
+        log.info("Groq: switching to key #{}", next + 1);
+        return apiKeys.get(next);
     }
 
     private static final int MAX_INPUT_CHARS = 3000;
@@ -87,33 +91,39 @@ public class AiProcessorService {
 
     private NewsItem callGroq(NewsItem item, String textForAi, boolean usingFullText) throws Exception {
         var requestBody = buildRequestBody(item, textForAi, usingFullText);
-        String key = nextKey();
 
-        var httpRequest = new Request.Builder()
-                .url(groqProperties.getApi().getUrl())
-                .header("Authorization", "Bearer " + key)
-                .post(RequestBody.create(requestBody, MediaType.get("application/json")))
-                .build();
+        for (int attempt = 0; attempt < apiKeys.size(); attempt++) {
+            String key = attempt == 0 ? currentKey() : switchKey();
+            final String finalKey = key;
 
-        // Route through centralized rate limiter — shared with all other Groq callers
-        Future<String> future = groqRateLimiter.submit(
-                "news:" + item.getTitleEn(),
-                () -> {
-                    try (var response = httpClient.newCall(httpRequest).execute()) {
-                        if (response.code() == 429) return "__RATE_LIMITED__";
-                        var body = response.body();
-                        return body != null ? body.string() : "";
+            var httpRequest = new Request.Builder()
+                    .url(groqProperties.getApi().getUrl())
+                    .header("Authorization", "Bearer " + finalKey)
+                    .post(RequestBody.create(requestBody, MediaType.get("application/json")))
+                    .build();
+
+            Future<String> future = groqRateLimiter.submit(
+                    "news:" + item.getTitleEn(),
+                    () -> {
+                        try (var response = httpClient.newCall(httpRequest).execute()) {
+                            if (response.code() == 429) return "__RATE_LIMITED__";
+                            var body = response.body();
+                            return body != null ? body.string() : "";
+                        }
                     }
-                }
-        );
+            );
 
-        String responseBody = future.get();
-        if ("__RATE_LIMITED__".equals(responseBody)) {
-            item.setTitleRu(null);
-            item.setRateLimited(true);
-            return item;
+            String responseBody = future.get();
+            if (!"__RATE_LIMITED__".equals(responseBody)) {
+                return parseGroqResponse(item, responseBody);
+            }
+            log.warn("Groq key #{} rate limited for '{}', trying next key", attempt + 1, item.getTitleEn());
         }
-        return parseGroqResponse(item, responseBody);
+
+        // All keys exhausted
+        item.setTitleRu(null);
+        item.setRateLimited(true);
+        return item;
     }
 
     private static final String SYSTEM_PROMPT = """

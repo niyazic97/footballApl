@@ -26,6 +26,7 @@ public class LiveGoalService {
     private final ObjectMapper objectMapper;
     private final MatchCacheService matchCacheService;
     private final TelegramPublisherService telegramPublisherService;
+    private final VkPublisherService vkPublisherService;
 
     @Value("${football.api.key:}")
     private String apiKey;
@@ -96,6 +97,7 @@ public class LiveGoalService {
 
         String post = formatGoalPost(goalsToPost);
         telegramPublisherService.sendTextMessage(post);
+        vkPublisherService.publishText(post);
         lastGoalPostTime = now;
         goalPostsThisHour.incrementAndGet();
         goalQueue.clear();

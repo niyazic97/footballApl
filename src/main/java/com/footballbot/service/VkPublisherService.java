@@ -39,6 +39,16 @@ public class VkPublisherService {
         return accessToken != null && !accessToken.isBlank() && groupId > 0;
     }
 
+    public void publishText(String text) {
+        if (!isEnabled()) return;
+        try {
+            postToWall(text, null);
+            log.info("Published text to VK ({} chars)", text.length());
+        } catch (Exception e) {
+            log.warn("Failed to publish text to VK: {}", e.getMessage());
+        }
+    }
+
     public boolean publishNews(NewsItem item) {
         if (!isEnabled()) return false;
         try {

@@ -4,6 +4,7 @@ import com.footballbot.repository.PublishedNewsRepository;
 import com.footballbot.service.AiProcessingQueueService;
 import com.footballbot.service.AiProcessorService;
 import com.footballbot.service.AiRankingService;
+import com.footballbot.service.BatchFilterService;
 import com.footballbot.service.DeduplicationService;
 import com.footballbot.service.HealthMonitorService;
 import com.footballbot.service.LiveGoalService;
@@ -42,6 +43,7 @@ public class NewsScheduler {
     private final AiProcessingQueueService aiProcessingQueueService;
     private final TelegramPublisherService telegramPublisherService;
     private final PublishedNewsRepository publishedNewsRepository;
+    private final BatchFilterService batchFilterService;
     private final DeduplicationService deduplicationService;
     private final AiRankingService aiRankingService;
     private final NewsPublishQueueService newsPublishQueueService;
@@ -63,9 +65,18 @@ public class NewsScheduler {
     @Value("${news.min.score}")
     private int minScore;
 
+    private boolean isSilenceHours() {
+        int hour = LocalDateTime.now(ZoneId.of("Europe/Moscow")).getHour();
+        return hour >= 1 && hour < 8;
+    }
+
     // JOB 1 — News collecting every 10 minutes
     @Scheduled(fixedDelayString = "PT10M", initialDelay = 5000)
     public void runNewsJob() {
+        if (isSilenceHours()) {
+            log.info("Silence hours (01:00-08:00 MSK) — skipping news job");
+            return;
+        }
         log.info("Starting news job...");
 
         // Step 1: fetch all news
@@ -90,26 +101,8 @@ public class NewsScheduler {
                 .filter(item -> !publishedNewsRepository.existsById(item.getId()))
                 .toList();
 
-        // Step 3: relevance filter (block non-EPL/UCL content)
-        var relevant = notPublished.stream()
-                .filter(item -> {
-                    boolean ok = RelevanceFilterUtil.isRelevant(item);
-                    return ok;
-                })
-                .toList();
-
-        // Step 4: deduplication
-        var deduplicated = deduplicationService.filterDuplicates(relevant);
-
-        // Step 5: set importanceScore and filter by minScore
-        deduplicated.forEach(item -> item.setImportanceScore(scorerUtil.score(item)));
-        var candidates = deduplicated.stream()
-                .filter(item -> {
-                    int s = item.getImportanceScore();
-                    if (s < minScore) log.info("Filtered out (score={} < {}): {}", s, minScore, item.getTitleEn());
-                    return s >= minScore;
-                })
-                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        // Step 3: AI batch filter — relevance + deduplication in one Groq call (Key 1)
+        var candidates = new ArrayList<>(batchFilterService.filterAndDeduplicate(notPublished));
 
         log.info("After all filters: {} items remaining from {} fetched", candidates.size(), allNews.size());
 
@@ -152,27 +145,29 @@ public class NewsScheduler {
         if (!matchCacheService.isActiveHours()) return;
 
         var matches = matchCacheService.getTodayMatches();
-        var now = LocalDateTime.now();
+        var now = LocalDateTime.now(ZoneId.of("Europe/Moscow"));
 
+        // Step 1: pre-match analysis + refresh status for all active-window matches
         for (var match : matches) {
-            if (match.getKickoff() != null) {
-                long minutesUntil = java.time.temporal.ChronoUnit.MINUTES.between(now, match.getKickoff());
+            if (match.getKickoff() == null || match.getMatchId() == null) continue;
+            long minutesUntil = java.time.temporal.ChronoUnit.MINUTES.between(now, match.getKickoff());
 
-                // Pre-match: 55-65 minutes before kickoff
-                if (minutesUntil >= 55 && minutesUntil <= 65) {
-                    matchCacheService.refreshMatchStatus(match.getMatchId());
-                    preMatchAnalysisService.generateAndPost(match);
-                }
+            // Pre-match analysis: 45-55 minutes before kickoff (lineups published ~60 min before)
+            if (minutesUntil >= 45 && minutesUntil <= 55) {
+                preMatchAnalysisService.generateAndPost(match);
             }
 
-            // Results: check finished matches
-            if ("FINISHED".equals(match.getStatus())) {
+            // Refresh status for matches in active window (30 min before to 150 min after kickoff)
+            // This updates IN_PLAY/PAUSED/FINISHED in cache so live goals and results can be detected
+            if (minutesUntil >= -150 && minutesUntil <= 30) {
                 matchCacheService.refreshMatchStatus(match.getMatchId());
+            }
+        }
+
+        // Step 2: re-read updated cache and process finished matches
+        for (var match : matchCacheService.getTodayMatches()) {
+            if ("FINISHED".equals(match.getStatus())) {
                 matchResultService.generateAndPost(match);
-                // Post-match stats run in background (waits 10min for data to populate)
-                Thread statsThread = new Thread(() -> postMatchStatsService.generateAndPost(match), "post-match-stats");
-                statsThread.setDaemon(true);
-                statsThread.start();
             }
         }
     }

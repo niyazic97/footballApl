@@ -25,6 +25,7 @@ public class MatchScheduleService {
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final TelegramPublisherService telegramPublisherService;
+    private final VkPublisherService vkPublisherService;
     private final MatchCacheService matchCacheService;
 
     @Value("${football.api.key:}")
@@ -45,6 +46,7 @@ public class MatchScheduleService {
 
         var post = formatSchedulePost(matches);
         telegramPublisherService.sendTextMessage(post);
+        vkPublisherService.publishText(post);
         log.info("Match schedule posted: {} matches", matches.size());
     }
 

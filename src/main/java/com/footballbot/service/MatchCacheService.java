@@ -113,19 +113,18 @@ public class MatchCacheService {
 
     public boolean isActiveHours() {
         var now = ZonedDateTime.now(MOSCOW).toLocalDateTime();
-        int hour = now.getHour();
 
-        // Check if any match has unusual early kickoff
+        // Active if any match is within 60 min before kickoff OR up to 210 min after kickoff
         for (var match : todayMatches) {
             if (match.getKickoff() != null) {
                 long minutesUntil = java.time.temporal.ChronoUnit.MINUTES.between(now, match.getKickoff());
-                if (minutesUntil >= 0 && minutesUntil <= 210) {
-                    return true; // within 30 min before to 3.5h after kickoff
+                if (minutesUntil >= -210 && minutesUntil <= 60) {
+                    return true;
                 }
             }
         }
 
-        return hour >= 17; // default active window 17:00-23:59 MSK
+        return false;
     }
 
     public boolean hasMatchesNearKickoff() {

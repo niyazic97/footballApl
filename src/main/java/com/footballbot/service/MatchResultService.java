@@ -31,6 +31,8 @@ public class MatchResultService {
     private final MatchScheduleService matchScheduleService;
     private final GroqRateLimiter groqRateLimiter;
     private final GroqProperties groqProperties;
+    private final BetService betService;
+    private final VkPublisherService vkPublisherService;
 
     @Value("${football.api.key:}")
     private String footballApiKey;
@@ -71,6 +73,9 @@ public class MatchResultService {
             var post = formatPost(match, homeScore, awayScore, htHome, htAway, goals, aiReaction);
 
             telegramPublisherService.sendTextMessage(post);
+            vkPublisherService.publishText(post);
+
+            betService.resolveBet(matchKey, homeScore, awayScore);
 
             publishedResultRepository.save(PublishedResult.builder()
                     .matchId(matchKey)
@@ -158,9 +163,6 @@ public class MatchResultService {
                                Map<String, String> aiReaction) {
         String homeRu = matchScheduleService.translateTeam(match.getHomeTeam());
         String awayRu = matchScheduleService.translateTeam(match.getAwayTeam());
-        String leagueEmoji = "UCL".equals(match.getLeague()) ? "🏆" : "🏴󠁧󠁢󠁥󠁮󠁧󠁿";
-        String leagueName = "UCL".equals(match.getLeague()) ? "Лига Чемпионов" : "Премьер-лига";
-        String leagueTag = "UCL".equals(match.getLeague()) ? "#лигачемпионов" : "#апл";
 
         var sb = new StringBuilder();
         sb.append("🏁 ФИНАЛЬНЫЙ СВИСТОК!\n\n");
@@ -168,7 +170,7 @@ public class MatchResultService {
         if (homeScore == awayScore) sb.append("🤝 Ничья!\n\n");
         else if (Math.abs(homeScore - awayScore) >= 3) sb.append("🔥 РАЗГРОМ!\n\n");
 
-        sb.append(leagueEmoji).append(" ").append(leagueName).append("\n\n");
+        sb.append("🏴󠁧󠁢󠁥󠁮󠁧󠁿 Премьер-лига\n\n");
         sb.append(homeRu).append(" ").append(homeScore).append(" : ").append(awayScore).append(" ").append(awayRu).append("\n\n");
 
         if (!goals.isEmpty()) {
@@ -179,27 +181,12 @@ public class MatchResultService {
                 int minute = g.get("minute") instanceof Number n ? n.intValue() : 0;
                 String scorerName = scorer != null ? (String) scorer.get("name") : "Unknown";
                 String teamName = team != null ? matchScheduleService.translateTeam((String) team.get("shortName")) : "";
-                boolean isLate = minute >= 85;
-                sb.append("• ").append(scorerName).append(" ").append(minute).append("' (").append(teamName).append(")");
-                if (isLate) sb.append(" 😱");
-                sb.append("\n");
+                sb.append(scorerName).append(" ").append(minute).append("' (").append(teamName).append(")\n");
             }
-            sb.append("\n");
         } else {
-            sb.append("Голов не было\n\n");
+            sb.append("Голов не было\n");
         }
 
-        sb.append("⏱ Счёт в перерыве: ").append(htHome).append(":").append(htAway).append("\n\n");
-
-        String reaction = aiReaction.getOrDefault("reaction", "");
-        String summary = aiReaction.getOrDefault("match_summary", "");
-        String star = aiReaction.getOrDefault("star_of_match", "");
-
-        if (!reaction.isBlank()) sb.append("💬 ").append(reaction).append("\n\n");
-        if (!summary.isBlank()) sb.append("📝 ").append(summary).append("\n\n");
-        if (!star.isBlank()) sb.append("⭐ Игрок матча: ").append(star).append("\n\n");
-
-        sb.append("#Результат ").append(leagueTag);
         return sb.toString();
     }
 }

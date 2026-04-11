@@ -58,16 +58,22 @@ public class NewsPublishQueueService {
         return queue.size();
     }
 
+    private boolean isSilenceHours() {
+        int hour = LocalDateTime.now(ZoneId.of("Europe/Moscow")).getHour();
+        return hour >= 1 && hour < 8;
+    }
+
     private void publishLoop() {
         while (true) {
             try {
-                if (paused) {
-                    TimeUnit.SECONDS.sleep(10);
+                if (paused || isSilenceHours()) {
+                    TimeUnit.SECONDS.sleep(60);
                     continue;
                 }
                 NewsItem item = queue.take(); // blocks until item available
-                if (paused) {
+                if (paused || isSilenceHours()) {
                     queue.offer(item); // put back
+                    TimeUnit.SECONDS.sleep(60);
                     continue;
                 }
 
