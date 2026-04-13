@@ -13,12 +13,10 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @Slf4j
@@ -31,30 +29,13 @@ public class AiProcessorService {
     private final GroqRateLimiter groqRateLimiter;
     private final GroqProperties groqProperties;
 
-    private List<String> apiKeys;
-    private final AtomicInteger currentKeyIndex = new AtomicInteger(0);
+    private String apiKey;
 
     @PostConstruct
-    @SuppressWarnings("unused") // called by Spring
-    public void initKeys() {
-        apiKeys = new ArrayList<>();
-        // Key 2 is primary for content generation; Key 1 is used by BatchFilterService
-        String key2 = groqProperties.getApi().getKey2();
-        if (key2 != null && !key2.isBlank()) {
-            apiKeys.add(key2);
-        }
-        apiKeys.add(groqProperties.getApi().getKey()); // fallback
-        log.info("Groq content generation: {} key(s), key2 primary", apiKeys.size());
-    }
-
-    private String currentKey() {
-        return apiKeys.get(currentKeyIndex.get() % apiKeys.size());
-    }
-
-    private String switchKey() {
-        int next = (currentKeyIndex.incrementAndGet()) % apiKeys.size();
-        log.info("Groq: switching to key #{}", next + 1);
-        return apiKeys.get(next);
+    @SuppressWarnings("unused")
+    public void initKey() {
+        apiKey = groqProperties.getApi().getKey();
+        log.info("Groq content generation: using GROQ_API_KEY");
     }
 
     private static final int MAX_INPUT_CHARS = 3000;
@@ -67,7 +48,6 @@ public class AiProcessorService {
             String rawText = (fullText != null && fullText.length() > 200) ? fullText : item.getSummaryEn();
             boolean usingFullText = fullText != null && fullText.length() > 200;
 
-            // Truncate at sentence boundary so Groq doesn't receive broken text
             String textForAi;
             if (rawText != null && rawText.length() > MAX_INPUT_CHARS) {
                 String cut = rawText.substring(0, MAX_INPUT_CHARS);
@@ -93,37 +73,41 @@ public class AiProcessorService {
     private NewsItem callGroq(NewsItem item, String textForAi, boolean usingFullText) throws Exception {
         var requestBody = buildRequestBody(item, textForAi, usingFullText);
 
-        for (int attempt = 0; attempt < apiKeys.size(); attempt++) {
-            final String key = attempt == 0 ? currentKey() : switchKey();
+        var httpRequest = new Request.Builder()
+                .url(groqProperties.getApi().getUrl())
+                .header("Authorization", "Bearer " + apiKey)
+                .post(RequestBody.create(requestBody, MediaType.get("application/json")))
+                .build();
 
-            var httpRequest = new Request.Builder()
-                    .url(groqProperties.getApi().getUrl())
-                    .header("Authorization", "Bearer " + key)
-                    .post(RequestBody.create(requestBody, MediaType.get("application/json")))
-                    .build();
-
-            Future<String> future = groqRateLimiter.submit(
-                    "news:" + item.getTitleEn(),
-                    () -> {
-                        try (var response = httpClient.newCall(httpRequest).execute()) {
-                            if (response.code() == 429) return "__RATE_LIMITED__";
-                            var body = response.body();
-                            return body != null ? body.string() : "";
+        Future<String> future = groqRateLimiter.submit(
+                "news:" + item.getTitleEn(),
+                () -> {
+                    try (var response = httpClient.newCall(httpRequest).execute()) {
+                        var body = response.body();
+                        String bodyStr = body != null ? body.string() : "";
+                        if (response.code() == 429) {
+                            boolean isDaily = bodyStr.contains("per day") || bodyStr.contains("TPD");
+                            log.warn("Groq 429 ({})", isDaily ? "DAILY — dropping" : "per-minute — will retry");
+                            return isDaily ? "__DAILY_LIMIT__" : "__RATE_LIMITED__";
                         }
+                        return bodyStr;
                     }
-            );
+                }
+        );
 
-            String responseBody = future.get();
-            if (!"__RATE_LIMITED__".equals(responseBody)) {
-                return parseGroqResponse(item, responseBody);
-            }
-            log.warn("Groq key #{} rate limited for '{}', trying next key", attempt + 1, item.getTitleEn());
+        String responseBody = future.get();
+        if ("__DAILY_LIMIT__".equals(responseBody)) {
+            item.setTitleRu(null);
+            item.setRateLimited(false); // drop, don't re-queue
+            return item;
+        }
+        if ("__RATE_LIMITED__".equals(responseBody)) {
+            item.setTitleRu(null);
+            item.setRateLimited(true); // re-queue
+            return item;
         }
 
-        // All keys exhausted
-        item.setTitleRu(null);
-        item.setRateLimited(true);
-        return item;
+        return parseGroqResponse(item, responseBody);
     }
 
     private static final String SYSTEM_PROMPT = """
@@ -201,7 +185,6 @@ public class AiProcessorService {
             if (isValidQuote(rawQuote)) {
                 item.setQuote(EntityDictionaryUtil.normalizeEntities(rawQuote));
             }
-            // Tags generated from English title via dictionary — not trusted from Groq
             var dictTags = EntityDictionaryUtil.generateTags(item.getTitleEn());
             item.setTags(dictTags.isEmpty()
                     ? (List<String>) parsed.getOrDefault("tags", Collections.emptyList())
@@ -221,18 +204,15 @@ public class AiProcessorService {
             log.info("AI processed: {}", item.getTitleRu());
         } catch (Exception e) {
             log.warn("Failed to parse Groq response: {}", e.getMessage());
-            // Mark item as AI-failed so scheduler skips publishing
             item.setTitleRu(null);
         }
         return item;
     }
 
-    // Valid quote must have "Name: text" format and be long enough to be real
     private boolean isValidQuote(String quote) {
         if (quote == null || quote.isBlank() || quote.equalsIgnoreCase("null")) return false;
         if (quote.length() < 20) return false;
         if (!quote.contains(":")) return false;
-        // Reject AI explanations like "Артета не цитируется..."
         String lower = quote.toLowerCase();
         return !lower.contains("не цитируется") && !lower.contains("нет цитаты") &&
                !lower.contains("no quote") && !lower.contains("not quoted") &&

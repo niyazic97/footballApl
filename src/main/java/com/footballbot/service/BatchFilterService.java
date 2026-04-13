@@ -30,7 +30,7 @@ public class BatchFilterService {
     private final PublishedNewsRepository publishedNewsRepository;
     private final GroqRateLimiter groqRateLimiter;
 
-    @Value("${groq.api.key}")
+    @Value("${groq.api.key2}")
     @SuppressWarnings("unused") // injected by Spring @Value
     private String apiKey;
 
@@ -81,9 +81,14 @@ public class BatchFilterService {
 
         Future<String> future = groqRateLimiter.submit("batch-filter", () -> {
             try (var response = httpClient.newCall(request).execute()) {
-                if (response.code() == 429) return "__RATE_LIMITED__";
                 var body = response.body();
-                return body != null ? body.string() : "";
+                String bodyStr = body != null ? body.string() : "";
+                if (response.code() == 429) {
+                    boolean isDailyLimit = bodyStr.contains("per day") || bodyStr.contains("TPD");
+                    log.warn("Batch filter 429 ({})", isDailyLimit ? "DAILY" : "per-minute");
+                    return "__RATE_LIMITED__";
+                }
+                return bodyStr;
             }
         });
 

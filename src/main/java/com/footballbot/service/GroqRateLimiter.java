@@ -55,6 +55,7 @@ public class GroqRateLimiter {
     private void enforceGap(String taskName) {
         long elapsed = System.currentTimeMillis() - lastCallAt;
         long gapMs = groqProperties.getGapSeconds() * 1000L;
+        log.info("Groq gap config: {}s (from groq.gap.seconds)", groqProperties.getGapSeconds());
         if (lastCallAt > 0 && elapsed < gapMs) {
             long waitMs = gapMs - elapsed;
             log.info("Groq rate limiter: waiting {}s before '{}' (gap enforcement)",
