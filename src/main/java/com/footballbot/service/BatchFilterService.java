@@ -30,7 +30,7 @@ public class BatchFilterService {
     private final PublishedNewsRepository publishedNewsRepository;
     private final GroqRateLimiter groqRateLimiter;
 
-    @Value("${groq.api.key2}")
+    @Value("${groq.api.key2:}")
     @SuppressWarnings("unused") // injected by Spring @Value
     private String apiKey;
 
