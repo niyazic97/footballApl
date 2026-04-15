@@ -1,6 +1,7 @@
 package com.footballbot.service;
 
 import com.footballbot.model.NewsItem;
+import com.footballbot.model.PublishedNews;
 import com.footballbot.repository.PublishedNewsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,50 +19,40 @@ import java.util.stream.Collectors;
 public class DeduplicationService {
 
     private final PublishedNewsRepository publishedNewsRepository;
+
     private static final Set<String> STOPWORDS = Set.of(
             "the", "a", "as", "in", "at", "of", "and", "to", "for", "is", "are", "was", "were",
             "it", "on", "by", "an", "be", "this", "that", "with", "from", "but", "or", "not"
     );
 
-    // Key entities — clubs and players. If 2+ match between two titles → same topic
-    private static final Set<String> ENTITIES = Set.of(
-            "arsenal", "chelsea", "liverpool", "city", "united", "tottenham", "newcastle",
-            "aston villa", "west ham", "everton", "brighton", "fulham", "wolves", "forest",
-            "brentford", "bournemouth", "palace", "southampton", "ipswich", "leicester",
-            "real madrid", "barcelona", "bayern", "psg", "juventus",
-            "haaland", "salah", "saka", "bellingham", "kane", "rashford", "palmer",
-            "de bruyne", "foden", "fernandes", "van dijk", "trent", "isak", "son",
-            "odegaard", "rice", "rodri", "mbappe", "vinicius", "arteta", "guardiola",
-            "slot", "amorim", "maresca", "howe", "hillsborough", "kvaratskhelia"
-    );
-
     public List<NewsItem> filterDuplicates(List<NewsItem> items) {
         var now = LocalDateTime.now(ZoneId.of("Europe/Moscow"));
-        var allRecentTitles = publishedNewsRepository
-                .findByPostedAtAfter(now.minusHours(6))
-                .stream()
-                .map(p -> normalize(p.getTitle()))
-                .toList();
 
-        // For entity-based deduplication use a shorter window (2h) to avoid over-blocking
-        var entityWindowTitles = publishedNewsRepository
-                .findByPostedAtAfter(now.minusHours(2))
-                .stream()
+        var recentPublished = publishedNewsRepository.findByPostedAtAfter(now.minusHours(6));
+        var entityWindowPublished = publishedNewsRepository.findByPostedAtAfter(now.minusHours(2));
+
+        var allRecentNormalized = recentPublished.stream()
                 .map(p -> normalize(p.getTitle()))
                 .toList();
+        var entityWindowOriginals = entityWindowPublished.stream()
+                .map(PublishedNews::getTitle)
+                .collect(Collectors.toCollection(ArrayList::new));
 
         var result = new ArrayList<NewsItem>();
-        var batchTitles = new ArrayList<String>();
+        var batchNormalized = new ArrayList<String>();
+        var batchOriginals = new ArrayList<String>();
 
         for (var item : items) {
-            var allTitles = new ArrayList<>(allRecentTitles);
-            allTitles.addAll(batchTitles);
-            var entityTitles = new ArrayList<>(entityWindowTitles);
-            entityTitles.addAll(batchTitles);
+            var allNormalized = new ArrayList<>(allRecentNormalized);
+            allNormalized.addAll(batchNormalized);
 
-            if (!isDuplicate(item, allTitles, entityTitles)) {
+            var allOriginals = new ArrayList<>(entityWindowOriginals);
+            allOriginals.addAll(batchOriginals);
+
+            if (!isDuplicate(item, allNormalized, allOriginals)) {
                 result.add(item);
-                batchTitles.add(normalize(item.getTitleEn()));
+                batchNormalized.add(normalize(item.getTitleEn()));
+                batchOriginals.add(item.getTitleEn());
             } else {
                 log.info("Deduplicated: {}", item.getTitleEn());
             }
@@ -72,12 +63,12 @@ public class DeduplicationService {
         return result;
     }
 
-    private boolean isDuplicate(NewsItem candidate, List<String> recentTitles, List<String> entityTitles) {
+    private boolean isDuplicate(NewsItem candidate, List<String> recentNormalized, List<String> recentOriginals) {
         var normCandidate = normalize(candidate.getTitleEn());
         var wordsCandidate = getWords(normCandidate);
 
         // Step 1 & 2: keyword overlap + Levenshtein (6h window)
-        for (var recentTitle : recentTitles) {
+        for (var recentTitle : recentNormalized) {
             var wordsRecent = getWords(recentTitle);
 
             var shared = new HashSet<>(wordsCandidate);
@@ -97,32 +88,43 @@ public class DeduplicationService {
             }
         }
 
-        // Step 3: entity overlap — 2h window, threshold=2
-        var entitiesCandidate = extractEntities(normCandidate);
-        for (var recentTitle : entityTitles) {
-            var entitiesRecent = extractEntities(recentTitle);
-            if (entitiesCandidate.size() >= 2 && entitiesRecent.size() >= 2) {
-                var sharedEntities = new HashSet<>(entitiesCandidate);
-                sharedEntities.retainAll(entitiesRecent);
-                if (sharedEntities.size() >= 2) {
-                    return true;
-                }
-            }
-        }
-
-        // Step 4: shared content words anchored to an EPL entity — catches same-event articles
-        // worded differently (e.g. "Tudor leaves Tottenham" vs "Tottenham release statement on Tudor")
-        var contentCandidate = getContentWords(normCandidate);
-        for (var recentTitle : entityTitles) {
-            var contentRecent = getContentWords(recentTitle);
-            var shared = new HashSet<>(contentCandidate);
-            shared.retainAll(contentRecent);
-            if (shared.size() >= 2 && shared.stream().anyMatch(ENTITIES::contains)) {
+        // Step 3: proper noun overlap (2h window + batch).
+        // Extracts capitalized words from original English titles — no hardcoded dictionary needed.
+        // If 2+ proper nouns are shared → same story told differently.
+        var nounsCandidate = extractProperNouns(candidate.getTitleEn());
+        for (var recentOriginal : recentOriginals) {
+            var nounsRecent = extractProperNouns(recentOriginal);
+            var sharedNouns = new HashSet<>(nounsCandidate);
+            sharedNouns.retainAll(nounsRecent);
+            if (sharedNouns.size() >= 2) {
+                log.debug("Dedup by proper nouns {}: {}", sharedNouns, candidate.getTitleEn());
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Extracts proper nouns from an original (non-normalized) English title.
+     * Capitalized words of 3+ chars are treated as proper nouns (names, clubs, cities).
+     * No dictionary needed — works for any player or club name automatically.
+     */
+    private Set<String> extractProperNouns(String originalTitle) {
+        if (originalTitle == null || originalTitle.isBlank()) return Set.of();
+        var nouns = new HashSet<String>();
+        String[] words = originalTitle.split("[\\s\\-/]+");
+        for (int i = 0; i < words.length; i++) {
+            String clean = words[i].replaceAll("[^a-zA-Z]", "");
+            if (clean.length() < 3) continue;
+            if (STOPWORDS.contains(clean.toLowerCase())) continue;
+            // First word is capitalized by grammar rules — only include it if 5+ chars
+            boolean isProperNoun = Character.isUpperCase(clean.charAt(0)) && (i > 0 || clean.length() >= 5);
+            if (isProperNoun) {
+                nouns.add(clean.toLowerCase());
+            }
+        }
+        return nouns;
     }
 
     private String normalize(String text) {
@@ -133,19 +135,6 @@ public class DeduplicationService {
     private Set<String> getWords(String normalized) {
         return Arrays.stream(normalized.split("\\s+"))
                 .filter(w -> !w.isEmpty() && !STOPWORDS.contains(w))
-                .collect(Collectors.toSet());
-    }
-
-    // Words with 5+ chars that carry meaning — used to detect same-event articles
-    private Set<String> getContentWords(String normalized) {
-        return Arrays.stream(normalized.split("\\s+"))
-                .filter(w -> w.length() >= 5 && !STOPWORDS.contains(w))
-                .collect(Collectors.toSet());
-    }
-
-    private Set<String> extractEntities(String normalized) {
-        return ENTITIES.stream()
-                .filter(normalized::contains)
                 .collect(Collectors.toSet());
     }
 }

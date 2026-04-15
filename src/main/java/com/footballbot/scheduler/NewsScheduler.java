@@ -113,8 +113,12 @@ public class NewsScheduler {
                 .filter(item -> !publishedNewsRepository.existsById(item.getId()))
                 .toList();
 
-        // Step 3: AI batch filter — relevance + deduplication in one Groq call (Key 1)
-        var candidates = new ArrayList<>(batchFilterService.filterAndDeduplicate(notPublished));
+        // Step 3: local deduplication — proper noun matching, no AI needed
+        var deduped = deduplicationService.filterDuplicates(notPublished);
+        log.info("After local dedup: {}/{}", deduped.size(), notPublished.size());
+
+        // Step 4: AI batch filter — relevance + semantic dedup via Groq
+        var candidates = new ArrayList<>(batchFilterService.filterAndDeduplicate(deduped));
 
         log.info("After all filters: {} items remaining from {} fetched", candidates.size(), allNews.size());
 
