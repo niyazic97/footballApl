@@ -159,10 +159,11 @@ public class EntityDictionaryUtil {
         return java.util.Optional.ofNullable(DICT.get(key.toLowerCase().trim()));
     }
 
-    // Unicode blocks that should never appear in Russian/English football text
+    // Unicode ranges that should never appear in Russian/English football text:
+    // Hangul, Hiragana, Katakana, CJK Unified Ideographs, Arabic, Thai, Devanagari
     private static final Pattern UNEXPECTED_UNICODE = Pattern.compile(
-            "[\\p{IsHangul}\\p{IsHiragana}\\p{IsKatakana}\\p{IsCJK_Unified_Ideographs}" +
-            "\\p{IsArabic}\\p{IsThai}\\p{IsDevanagari}\\p{IsArmenian}\\p{IsGeorgian}]+"
+            "[\uAC00-\uD7AF\u1100-\u11FF\u3040-\u309F\u30A0-\u30FF" +
+            "\u4E00-\u9FFF\u3400-\u4DBF\u0600-\u06FF\u0E00-\u0E7F\u0900-\u097F]+"
     );
 
     /**
