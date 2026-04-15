@@ -159,13 +159,28 @@ public class EntityDictionaryUtil {
         return java.util.Optional.ofNullable(DICT.get(key.toLowerCase().trim()));
     }
 
+    // Unicode blocks that should never appear in Russian/English football text
+    private static final Pattern UNEXPECTED_UNICODE = Pattern.compile(
+            "[\\p{IsHangul}\\p{IsHiragana}\\p{IsKatakana}\\p{IsCJK_Unified_Ideographs}" +
+            "\\p{IsArabic}\\p{IsThai}\\p{IsDevanagari}\\p{IsArmenian}\\p{IsGeorgian}]+"
+    );
+
+    /**
+     * Strips unexpected Unicode characters (Hangul, CJK, Arabic, etc.) from text.
+     * Handles cases where LLM mixes character sets mid-word (e.g. "Спор팅" → "Спор").
+     */
+    private static String stripUnexpectedUnicode(String text) {
+        if (text == null) return null;
+        return UNEXPECTED_UNICODE.matcher(text).replaceAll("");
+    }
+
     /**
      * Replaces all known English entity names with their correct Russian translations.
      * Applied to Groq output to guarantee consistent naming.
      */
     public static String normalizeEntities(String text) {
         if (text == null || text.isBlank()) return text;
-        String result = text;
+        String result = stripUnexpectedUnicode(text);
         for (Map.Entry<String, String> entry : DICT.entrySet()) {
             result = result.replaceAll(
                     "(?i)\\b" + Pattern.quote(entry.getKey()) + "\\b",
