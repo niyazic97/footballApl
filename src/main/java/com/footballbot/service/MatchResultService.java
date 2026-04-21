@@ -54,12 +54,12 @@ public class MatchResultService {
 
             var goals = (List<Map<String, Object>>) details.getOrDefault("goals", List.of());
 
-            var post = formatPost(match, homeScore, awayScore, goals);
+            betService.resolveBet(matchKey, homeScore, awayScore);
+
+            var post = formatPost(match, homeScore, awayScore, goals, matchKey);
 
             telegramPublisherService.sendTextMessage(post);
             vkPublisherService.publishText(post);
-
-            betService.resolveBet(matchKey, homeScore, awayScore);
 
             publishedResultRepository.save(PublishedResult.builder()
                     .matchId(matchKey)
@@ -90,7 +90,7 @@ public class MatchResultService {
 
     @SuppressWarnings("unchecked")
     private String formatPost(MatchDay match, int homeScore, int awayScore,
-                               List<Map<String, Object>> goals) {
+                               List<Map<String, Object>> goals, String matchKey) {
         String homeRu = matchScheduleService.translateTeam(match.getHomeTeam());
         String awayRu = matchScheduleService.translateTeam(match.getAwayTeam());
 
@@ -115,6 +115,24 @@ public class MatchResultService {
             }
         } else {
             sb.append("Голов не было\n");
+        }
+
+        // Bet result for this match
+        betService.getBetRecord(matchKey).ifPresent(bet -> {
+            if ("SKIP".equals(bet.getResult())) return;
+            sb.append("\n");
+            String icon = "WIN".equals(bet.getResult()) ? "✅" : "❌";
+            sb.append(icon).append(" Наш прогноз: ").append(bet.getBet());
+            if (bet.getConfidence() != null) sb.append(" (").append(bet.getConfidence()).append(")");
+            sb.append(" — ").append("WIN".equals(bet.getResult()) ? "угадали!" : "не угадали");
+        });
+
+        // Overall stats
+        String statsLine = betService.getStatsLine();
+        if (!statsLine.isBlank()) {
+            sb.append("\n\n━━━━━━━━━━━━━━━━━━━━\n");
+            sb.append("📊 ").append(statsLine).append("\n");
+            sb.append("ℹ️ Это статистика наших прогнозов, не рекомендация к ставкам");
         }
 
         return sb.toString();

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @Slf4j
@@ -41,6 +42,10 @@ public class BetService {
             betRecordRepository.save(bet);
             log.info("Bet resolved for match {}: {} → {}", matchId, bet.getBet(), result);
         });
+    }
+
+    public Optional<BetRecord> getBetRecord(String matchId) {
+        return betRecordRepository.findById(matchId);
     }
 
     /** Returns "X из Y угадали" string for display */
