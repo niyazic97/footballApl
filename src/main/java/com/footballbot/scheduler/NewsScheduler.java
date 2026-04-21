@@ -2,8 +2,6 @@ package com.footballbot.scheduler;
 
 import com.footballbot.repository.PublishedNewsRepository;
 import com.footballbot.service.AiProcessingQueueService;
-import com.footballbot.service.AiProcessorService;
-import com.footballbot.service.AiRankingService;
 import com.footballbot.service.BatchFilterService;
 import com.footballbot.service.DeduplicationService;
 import com.footballbot.service.HealthMonitorService;
@@ -11,14 +9,10 @@ import com.footballbot.service.LiveGoalService;
 import com.footballbot.service.MatchCacheService;
 import com.footballbot.service.MatchResultService;
 import com.footballbot.service.MatchScheduleService;
-import com.footballbot.service.NewsPublishQueueService;
-import com.footballbot.service.PostMatchStatsService;
 import com.footballbot.service.PreMatchAnalysisService;
 import com.footballbot.service.RssParserService;
-import com.footballbot.service.TelegramPublisherService;
 import com.footballbot.service.PlayerRosterService;
 import com.footballbot.service.StandingsImageService;
-import com.footballbot.service.WeeklyRoundupService;
 import com.footballbot.util.RelevanceFilterUtil;
 import com.footballbot.util.ScorerUtil;
 import lombok.RequiredArgsConstructor;
@@ -39,21 +33,15 @@ import java.util.List;
 public class NewsScheduler {
 
     private final RssParserService rssParserService;
-    private final AiProcessorService aiProcessorService;
     private final AiProcessingQueueService aiProcessingQueueService;
-    private final TelegramPublisherService telegramPublisherService;
     private final PublishedNewsRepository publishedNewsRepository;
     private final BatchFilterService batchFilterService;
     private final DeduplicationService deduplicationService;
-    private final AiRankingService aiRankingService;
-    private final NewsPublishQueueService newsPublishQueueService;
     private final MatchCacheService matchCacheService;
     private final MatchScheduleService matchScheduleService;
     private final PreMatchAnalysisService preMatchAnalysisService;
-    private final WeeklyRoundupService weeklyRoundupService;
     private final StandingsImageService standingsImageService;
     private final MatchResultService matchResultService;
-    private final PostMatchStatsService postMatchStatsService;
     private final HealthMonitorService healthMonitorService;
     private final LiveGoalService liveGoalService;
     private final PlayerRosterService playerRosterService;
@@ -70,8 +58,8 @@ public class NewsScheduler {
         return hour >= 1 && hour < 8;
     }
 
-    // JOB 1 — News collecting every 10 minutes
-    @Scheduled(fixedDelayString = "PT10M", initialDelay = 5000)
+    // JOB 1 — News collecting every 15 minutes
+    @Scheduled(fixedDelayString = "PT15M", initialDelay = 5000)
     public void runNewsJob() {
         if (isSilenceHours()) {
             log.info("Silence hours (01:00-08:00 MSK) — skipping news job");

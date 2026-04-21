@@ -107,7 +107,7 @@ public class BatchFilterService {
 
         if (!recentTitles.isEmpty()) {
             sb.append("Recently published articles (for duplicate detection):\n");
-            recentTitles.stream().limit(15).forEach(t -> sb.append("- ").append(t).append("\n"));
+            recentTitles.stream().limit(25).forEach(t -> sb.append("- ").append(t).append("\n"));
             sb.append("\n");
         }
 

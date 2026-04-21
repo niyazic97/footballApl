@@ -55,7 +55,7 @@ public class VkPublisherService {
             String attachment = null;
             byte[] imageBytes = imageFinderService.findImageBytes(item);
             if (imageBytes != null) {
-                attachment = uploadDocAttachment(imageBytes, item.getTitleRu());
+                attachment = uploadPhotoAttachment(imageBytes);
             }
             postToWall(buildText(item), attachment);
             log.info("Published to VK{}: {}", attachment != null ? " (with image)" : "", item.getTitleRu());
@@ -66,23 +66,23 @@ public class VkPublisherService {
         }
     }
 
-    private String uploadDocAttachment(byte[] imageBytes, String title) throws Exception {
-        // Step 1: get upload URL
-        String serverUrl = VK_API + "docs.getWallUploadServer"
+    private String uploadPhotoAttachment(byte[] imageBytes) throws Exception {
+        // Step 1: get wall photo upload server
+        String serverUrl = VK_API + "photos.getWallUploadServer"
                 + "?group_id=" + groupId
                 + "&access_token=" + accessToken
                 + "&v=" + VK_VERSION;
         var serverResp = objectMapper.readValue(get(serverUrl), Map.class);
         if (serverResp.containsKey("error")) {
-            log.warn("VK docs upload server error: {}", serverResp.get("error"));
+            log.warn("VK photos upload server error: {}", serverResp.get("error"));
             return null;
         }
         String uploadUrl = (String) ((Map<?, ?>) serverResp.get("response")).get("upload_url");
 
-        // Step 2: upload image as multipart
+        // Step 2: upload photo as multipart
         var body = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
-                .addFormDataPart("file", "image.jpg",
+                .addFormDataPart("photo", "image.jpg",
                         RequestBody.create(imageBytes, MediaType.parse("image/jpeg")))
                 .build();
         var uploadReq = new Request.Builder().url(uploadUrl).post(body).build();
@@ -92,38 +92,36 @@ public class VkPublisherService {
             uploadRespStr = rb != null ? rb.string() : "{}";
         }
         var uploadResp = objectMapper.readValue(uploadRespStr, Map.class);
-        String fileToken = (String) uploadResp.get("file");
-        if (fileToken == null || fileToken.isBlank()) {
-            log.warn("VK doc upload returned no file token");
+        String server = String.valueOf(uploadResp.get("server"));
+        String photo = (String) uploadResp.get("photo");
+        String hash = (String) uploadResp.get("hash");
+        if (photo == null || photo.isBlank() || photo.equals("[]")) {
+            log.warn("VK photo upload returned no photo token");
             return null;
         }
 
-        // Step 3: save document
-        String saveUrl = VK_API + "docs.save"
-                + "?file=" + URLEncoder.encode(fileToken, StandardCharsets.UTF_8)
-                + "&title=" + URLEncoder.encode(title != null ? title : "image", StandardCharsets.UTF_8)
+        // Step 3: save wall photo
+        String saveUrl = VK_API + "photos.saveWallPhoto"
+                + "?group_id=" + groupId
+                + "&server=" + server
+                + "&photo=" + URLEncoder.encode(photo, StandardCharsets.UTF_8)
+                + "&hash=" + URLEncoder.encode(hash, StandardCharsets.UTF_8)
                 + "&access_token=" + accessToken
                 + "&v=" + VK_VERSION;
         var saveResp = objectMapper.readValue(get(saveUrl), Map.class);
         if (saveResp.containsKey("error")) {
-            log.warn("VK docs.save error: {}", saveResp.get("error"));
+            log.warn("VK photos.saveWallPhoto error: {}", saveResp.get("error"));
             return null;
         }
-        var responseObj = (Map<?, ?>) saveResp.get("response");
-        // docs.save returns {type: "doc", doc: {id, owner_id, ...}}
-        var doc = (Map<?, ?>) responseObj.get("doc");
-        if (doc == null) {
-            // fallback: might be a list
-            var list = (List<?>) responseObj.get("doc");
-            if (list != null && !list.isEmpty()) doc = (Map<?, ?>) list.get(0);
-        }
-        if (doc == null) {
-            log.warn("VK docs.save returned unexpected structure: {}", saveResp);
+        var savedList = (List<?>) saveResp.get("response");
+        if (savedList == null || savedList.isEmpty()) {
+            log.warn("VK photos.saveWallPhoto returned empty response");
             return null;
         }
-        int ownerId = ((Number) doc.get("owner_id")).intValue();
-        int docId = ((Number) doc.get("id")).intValue();
-        return "doc" + ownerId + "_" + docId;
+        var savedPhoto = (Map<?, ?>) savedList.get(0);
+        int ownerId = ((Number) savedPhoto.get("owner_id")).intValue();
+        int photoId = ((Number) savedPhoto.get("id")).intValue();
+        return "photo" + ownerId + "_" + photoId;
     }
 
     private String buildText(NewsItem item) {
@@ -145,19 +143,8 @@ public class VkPublisherService {
             sb.append("💬 ").append(item.getQuote()).append("\n\n");
         }
 
-        // Separator + hashtags + source
+        // Separator + source
         sb.append("━━━━━━━━━━━━━━━━━━━━\n");
-
-        // Hashtags from tags
-        if (item.getTags() != null && !item.getTags().isEmpty()) {
-            item.getTags().stream()
-                    .filter(t -> t != null && !t.isBlank())
-                    .limit(4)
-                    .forEach(t -> sb.append("#").append(t.replace(" ", "_")).append(" "));
-            sb.append("#АПЛ\n");
-        } else {
-            sb.append("#АПЛ #английскийфутбол\n");
-        }
 
         sb.append("🔗 ").append(item.getUrl());
 
@@ -198,7 +185,8 @@ public class VkPublisherService {
 
     private String get(String url) throws Exception {
         try (var resp = httpClient.newCall(new Request.Builder().url(url).build()).execute()) {
-            return resp.body().string();
+            var body = resp.body();
+            return body != null ? body.string() : "{}";
         }
     }
 

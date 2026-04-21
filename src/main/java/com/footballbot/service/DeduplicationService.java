@@ -29,12 +29,11 @@ public class DeduplicationService {
         var now = LocalDateTime.now(ZoneId.of("Europe/Moscow"));
 
         var recentPublished = publishedNewsRepository.findByPostedAtAfter(now.minusHours(6));
-        var entityWindowPublished = publishedNewsRepository.findByPostedAtAfter(now.minusHours(2));
 
         var allRecentNormalized = recentPublished.stream()
                 .map(p -> normalize(p.getTitle()))
                 .toList();
-        var entityWindowOriginals = entityWindowPublished.stream()
+        var allRecentOriginals = recentPublished.stream()
                 .map(PublishedNews::getTitle)
                 .collect(Collectors.toCollection(ArrayList::new));
 
@@ -46,7 +45,7 @@ public class DeduplicationService {
             var allNormalized = new ArrayList<>(allRecentNormalized);
             allNormalized.addAll(batchNormalized);
 
-            var allOriginals = new ArrayList<>(entityWindowOriginals);
+            var allOriginals = new ArrayList<>(allRecentOriginals);
             allOriginals.addAll(batchOriginals);
 
             if (!isDuplicate(item, allNormalized, allOriginals)) {
@@ -67,7 +66,7 @@ public class DeduplicationService {
         var normCandidate = normalize(candidate.getTitleEn());
         var wordsCandidate = getWords(normCandidate);
 
-        // Step 1 & 2: keyword overlap + Levenshtein (6h window)
+        // Step 1 & 2: keyword overlap (lowered to 0.35) + Levenshtein (6h window)
         for (var recentTitle : recentNormalized) {
             var wordsRecent = getWords(recentTitle);
 
@@ -75,7 +74,7 @@ public class DeduplicationService {
             shared.retainAll(wordsRecent);
             var total = new HashSet<>(wordsCandidate);
             total.addAll(wordsRecent);
-            if (!total.isEmpty() && (double) shared.size() / total.size() >= 0.5) {
+            if (!total.isEmpty() && (double) shared.size() / total.size() >= 0.35) {
                 return true;
             }
 
@@ -88,9 +87,9 @@ public class DeduplicationService {
             }
         }
 
-        // Step 3: proper noun overlap (2h window + batch).
-        // Extracts capitalized words from original English titles — no hardcoded dictionary needed.
-        // If 2+ proper nouns are shared → same story told differently.
+        // Step 3: proper noun overlap (6h window + batch).
+        // 2+ any proper nouns shared → duplicate.
+        // 1 specific proper noun (6+ chars, e.g. player surname) → also duplicate.
         var nounsCandidate = extractProperNouns(candidate.getTitleEn());
         for (var recentOriginal : recentOriginals) {
             var nounsRecent = extractProperNouns(recentOriginal);
@@ -98,6 +97,12 @@ public class DeduplicationService {
             sharedNouns.retainAll(nounsRecent);
             if (sharedNouns.size() >= 2) {
                 log.debug("Dedup by proper nouns {}: {}", sharedNouns, candidate.getTitleEn());
+                return true;
+            }
+            // Single specific noun (player/manager surname, 6+ chars) is enough
+            boolean singleSpecific = sharedNouns.stream().anyMatch(n -> n.length() >= 6);
+            if (singleSpecific) {
+                log.debug("Dedup by specific noun {}: {}", sharedNouns, candidate.getTitleEn());
                 return true;
             }
         }
@@ -134,7 +139,7 @@ public class DeduplicationService {
 
     private Set<String> getWords(String normalized) {
         return Arrays.stream(normalized.split("\\s+"))
-                .filter(w -> !w.isEmpty() && !STOPWORDS.contains(w))
+                .filter(w -> w.length() >= 4 && !STOPWORDS.contains(w))
                 .collect(Collectors.toSet());
     }
 }
