@@ -52,12 +52,7 @@ public class VkPublisherService {
     public boolean publishNews(NewsItem item) {
         if (isDisabled()) return false;
         try {
-            String attachment = null;
-            byte[] imageBytes = imageFinderService.findImageBytes(item);
-            if (imageBytes != null) {
-                attachment = uploadPhotoAttachment(imageBytes);
-            }
-            postToWall(buildText(item), attachment);
+            postToWall(buildText(item), null);
             log.info("Published to VK{}: {}", attachment != null ? " (with image)" : "", item.getTitleRu());
             return true;
         } catch (Exception e) {
